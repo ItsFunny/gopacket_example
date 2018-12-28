@@ -38,7 +38,7 @@ winpcap的进阶版,winpcap已经停止维护
         &emsp;packet.go NewPacket L652 <br>
         &emsp;packet.go packetSource#NewPacket L798 <br>
         &emsp;enums.go layers.LinkTypeXXX都实现了这个接口 L100 <br> 
-	- 1.4 通过handle#Stats获取packets相关信息,接收包的总数等信息,**但是仅支持通过handle抓包的形式**
+	- 1.4 通过handle#Stats获取packets相关信息,接收包的总数等信息,**若通过packetSource则额外需要定义这个变量**
 - 2.通过PacketSource的形式
  	- 2.1 packetSource的创建需要通过handle
 	- 2.2 通过PacketSource抓包有两种方式
