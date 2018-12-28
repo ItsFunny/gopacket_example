@@ -2,12 +2,13 @@ package main
 
 import (
 	"flag"
-	"go_test/gopacket_examples"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"go_test/gopacket"
 
 
 )
@@ -20,7 +21,7 @@ var timeout=flag.Int64("t",8,"waitting seconds")
 
 func main() {
 	flag.Parse()
-	gopacket_examples.PrepareData(*ifaceName,int32(*snaplen),*promisc,time.Duration(time.Duration(*timeout)*time.Second))
+	gopacket.PrepareData(*ifaceName,int32(*snaplen),*promisc,time.Duration(time.Duration(*timeout)*time.Second))
 	//go captureByPacketSource()
 	go captureByHandle()
 	signalChan:=make(chan  os.Signal,1)
@@ -29,8 +30,8 @@ func main() {
 	log.Println("exit")
 }
 func captureByHandle(){
-	gopacket_examples.CaptureThroughHandle()
+	gopacket.CaptureThroughHandle()
 }
 func captureByPacketSource(){
-	gopacket_examples.CaptureThroughPacketSource()
+	gopacket.CaptureThroughPacketSource()
 }

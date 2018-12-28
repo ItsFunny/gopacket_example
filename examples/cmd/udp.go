@@ -1,11 +1,13 @@
 package main
 
 import (
+	"go_test/gopacket/examples"
+	"log"
+
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
-	"go_test/gopacket_examples"
-	"log"
+
 )
 
 func main() {
@@ -15,7 +17,7 @@ func main() {
 	}
 	inactiveHandle.SetSnapLen(1<<16)
 	inactiveHandle.SetBufferSize(1<<16)
-	inactiveHandle.SetTimeout(gopacket_examples.RECEIVE_TIMEOUT)
+	inactiveHandle.SetTimeout(examples.RECEIVE_TIMEOUT)
 	inactiveHandle.SetPromisc(false)
 	inactiveHandle.SetImmediateMode(false)
 	handle, e := inactiveHandle.Activate()
@@ -26,8 +28,8 @@ func main() {
 
 	ethernet:=&layers.Ethernet{
 		BaseLayer:    layers.BaseLayer{},
-		SrcMAC:       gopacket_examples.SMac,
-		DstMAC:       gopacket_examples.DMac,
+		SrcMAC:       examples.SMac,
+		DstMAC:       examples.DMac,
 		EthernetType: layers.EthernetTypeIPv4,
 	}
 
@@ -36,8 +38,8 @@ func main() {
 		IHL:      5,
 		TTL:      64,
 		Protocol: layers.IPProtocolUDP,
-		SrcIP:    gopacket_examples.SIp,
-		DstIP:    gopacket_examples.DIp,
+		SrcIP:    examples.SIp,
+		DstIP:    examples.DIp,
 	}
 
 	udp:=&layers.UDP{

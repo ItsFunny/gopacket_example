@@ -2,12 +2,13 @@ package main
 
 import (
 	"flag"
-	"go_test/gopacket_examples"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"go_test/gopacket"
 )
 
 var dstIp=flag.String("d","120.78.240.211","dstIp")
@@ -24,15 +25,15 @@ func main() {
 		flag.Usage()
 		return
 	}
-	gopacket_examples.InitData(dIp, *sendTimes, *interval)
+	gopacket.InitData(dIp, *sendTimes, *interval)
 	if *iface == "any" {
-		gopacket_examples.SendFromAny()
+		gopacket.SendFromAny()
 	} else {
 		ip, sMac := getLocalIpByName(*iface)
 		if ip == nil || sMac == nil {
 			log.Fatal("cant get local ip,check the interfaceName")
 		}
-		gopacket_examples.SendFromConcrete(*iface)
+		gopacket.SendFromConcrete(*iface)
 	}
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)

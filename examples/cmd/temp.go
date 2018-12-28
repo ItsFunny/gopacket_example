@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/google/gopacket/pcap"
 	"log"
 	"net"
+
+	"github.com/google/gopacket/pcap"
 )
 
 func main() {

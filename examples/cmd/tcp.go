@@ -2,11 +2,13 @@ package main
 
 import (
 	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
-	"go_test/gopacket_examples"
+	"go_test/gopacket/examples"
 	"log"
 	"time"
+
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
+
 )
 
 func main() {
@@ -18,8 +20,8 @@ func main() {
 	defer  handle.Close()
 
 	ethernet:=&layers.Ethernet{
-		SrcMAC:       gopacket_examples.SMac,
-		DstMAC:       gopacket_examples.DMac,
+		SrcMAC:       examples.SMac,
+		DstMAC:       examples.DMac,
 		EthernetType: layers.EthernetTypeIPv4,
 	}
 	ipv4:=&layers.IPv4{
@@ -28,8 +30,8 @@ func main() {
 		IHL:       5,
 		Length:    12333,
 		Protocol:  layers.IPProtocolTCP,
-		SrcIP:     gopacket_examples.SIp,
-		DstIP:     gopacket_examples.DIp,
+		SrcIP:     examples.SIp,
+		DstIP:     examples.DIp,
 		TTL:       64,
 	}
 	tcp:=&layers.TCP{
