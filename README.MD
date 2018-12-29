@@ -7,6 +7,17 @@ winpcap的进阶版,winpcap已经停止维护
 * 从https://nmap.org/npcap/#download 下载 npcap 以及npcap sdk
 * 解压sdk到C:/WpdPack/ 下,原因在于pcap.go中默认指向了这个文件夹
 
+- 1.Packet
+    -   1.1 快速创建Packet: gopacket#NewPacket
+    -   1.2 Decode
+- 2.Flow And Endpoint 
+    -    Flow 流量,包含srcEndPoint 和dstEndPoint 表明是谁发给谁
+    -    EndPoint 
+ - 3.Decoder
+    -   3.1 自定义decoder
+    -   3.2 DecodingLayerParser 对特定的layer解码,大大提升效率
+ - 4.Serialize
+
 ## 抓包
 
 - 关于抓包,有两种方式 ,两种方式的区别在于:handle获取到的数据是字节码
@@ -23,7 +34,7 @@ winpcap的进阶版,winpcap已经停止维护
    handle error-> <br>
    NewPacket->(包装数据)<br>
    return Packet
-   
+    
 - 1.通过handle的形式<br>
     - 1.1创建handle有两种方式
  	    -   1.1.1 通过函数传多个参数创建
@@ -47,7 +58,6 @@ winpcap的进阶版,winpcap已经停止维护
 		-  2.2.2 通过packetSource#NextPacket ,这种方法最灵活,同时外抛了异常,同时当流量小的时候性能很高(没有
 				  chan的开销)
 ## 异常处理
-
 - 见 pcap.go L327 && L387 
     -   io.EOF : file or OpenOffLine  当无数据读取的时候,不会返回指定的error,统一io.EOF 
     -   NextErrorNotActivated : handle 未active

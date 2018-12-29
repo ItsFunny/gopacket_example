@@ -1,4 +1,4 @@
-package examples
+package capture
 
 import (
 	"fmt"
@@ -231,6 +231,8 @@ func handlePacket(packet gopacket.Packet){
 	if ip4Layer != nil {
 		fmt.Println("IPv4 layer detected.")
 		ip, _ := ip4Layer.(*layers.IPv4)
+		fmt.Println("contents:",ip.Contents)
+		fmt.Println("payload:",ip.Payload)
 		fmt.Printf("From %s to %s\n", ip.SrcIP, ip.DstIP)
 		fmt.Println("Protocol: ", ip.Protocol)
 		fmt.Println()
@@ -238,17 +240,29 @@ func handlePacket(packet gopacket.Packet){
 		fmt.Println("No IPv4 layer detected.")
 	}
 	// tcp layer
-	tcpLayer := packet.Layer(layers.LayerTypeTCP)
-	if tcpLayer != nil {
-		fmt.Println("TCP layer detected.")
-		tcp, _ := tcpLayer.(*layers.TCP)
-		fmt.Println("ACK: ", tcp.ACK)
-		fmt.Println("SYN: ", tcp.SYN)
-		fmt.Println("Seq: ", tcp.Seq)
-		fmt.Println("DstPort: ", tcp.DstPort)
-		fmt.Println("SrcPort: ", tcp.SrcPort)
-		fmt.Println()
-	} else {
-		fmt.Println("No TCP layer detected.")
-	}
+	//tcpLayer := packet.Layer(layers.LayerTypeTCP)
+	//if tcpLayer != nil {
+	//	fmt.Println("TCP layer detected.")
+	//	tcp, _ := tcpLayer.(*layers.TCP)
+	//	fmt.Println("ACK: ", tcp.ACK)
+	//	fmt.Println("SYN: ", tcp.SYN)
+	//	fmt.Println("Seq: ", tcp.Seq)
+	//	fmt.Println("DstPort: ", tcp.DstPort)
+	//	fmt.Println("SrcPort: ", tcp.SrcPort)
+	//	fmt.Println()
+	//} else {
+	//	fmt.Println("No TCP layer detected.")
+	//}
+	//
+	//// udp layer
+	//udpLayer:=packet.Layer(layers.LayerTypeUDP)
+	//if nil!=udpLayer{
+	//	fmt.Println("UDP layer detected.")
+	//	udp, _ := tcpLayer.(*layers.UDP)
+	//	fmt.Printf("from port:%d to port :%d ",udp.SrcPort,udp.DstPort)
+	//	fmt.Println("payLoad:",udp.Payload)
+	//	fmt.Println("contents: ",udp.Contents)
+	//}else{
+	//	fmt.Println("No UDP layer detected")
+	//}
 }

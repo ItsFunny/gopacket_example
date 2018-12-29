@@ -10,7 +10,7 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 
-	"go_test/gopacket/examples"
+	"go_test/gopacket/examples/common"
 )
 
 type Buffer struct {
@@ -28,8 +28,8 @@ func main() {
 	log.Println("[SendMDNS]ready to send mdns")
 
 	ether := &layers.Ethernet{
-		SrcMAC:       examples.SMac,
-		DstMAC:       examples.DMac,
+		SrcMAC:       common.SMac,
+		DstMAC:       common.DMac,
 		EthernetType: layers.EthernetTypeIPv4,
 	}
 
@@ -37,12 +37,12 @@ func main() {
 		Version:  uint8(4),
 		IHL:      uint8(5),
 		Protocol: layers.IPProtocolUDP,
-		SrcIP:    examples.SIp,
-		DstIP:    examples.DIp,
+		SrcIP:    common.SIp,
+		DstIP:    common.DIp,
 	}
 
 	buffer := NewBuffer()
-	BuildMDNSPacket(buffer, examples.DIp.String())
+	BuildMDNSPacket(buffer, common.DIp.String())
 	udpPayData := buffer.Data
 
 	udp := &layers.UDP{

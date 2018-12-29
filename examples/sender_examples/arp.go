@@ -1,14 +1,16 @@
 package main
 
 import (
-	"github.com/google/gopacket"
-	"go_test/gopacket/examples"
 	"log"
 	"net"
 	"time"
 
+	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+
+	"go_test/gopacket/examples/common"
+
 
 )
 
@@ -29,7 +31,7 @@ func main() {
 	defer handle.Close()
 
 	ehternet := &layers.Ethernet{
-		SrcMAC:       examples.SMac,
+		SrcMAC:       common.SMac,
 		DstMAC:       net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
 		EthernetType: layers.EthernetTypeARP,
 	}
@@ -40,10 +42,10 @@ func main() {
 		HwAddressSize:     6,
 		ProtAddressSize:   4,
 		Operation:         1,
-		SourceHwAddress:   examples.SMac,
-		SourceProtAddress: examples.SIp,
+		SourceHwAddress:   common.SMac,
+		SourceProtAddress: common.SIp,
 		DstHwAddress:      net.HardwareAddr{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-		DstProtAddress:    examples.DIp,
+		DstProtAddress:    common.DIp,
 	}
 
 	buffer := gopacket.NewSerializeBuffer()
