@@ -60,6 +60,6 @@ winpcap的进阶版,winpcap已经停止维护
 ## 异常处理
 - 见 pcap.go L327 && L387 
     -   io.EOF : file or OpenOffLine  当无数据读取的时候,不会返回指定的error,统一io.EOF 
-    -   NextErrorNotActivated : handle 未active
+    -   NextErrorNotActivated : 
     -   NextErrorTimeoutExpired : 超时
     -   NextErrorReadError : 读取错误,packet有误
