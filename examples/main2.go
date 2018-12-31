@@ -8,10 +8,10 @@ import (
 	"github.com/google/gopacket/pcap"
 	"github.com/pkg/errors"
 	"io"
-	"log"
 	"math/rand"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -71,28 +71,44 @@ type CountRecorder struct {
 }
 
 type Definition struct {
-	ip     net.IP
+	ip     string
 	mac    net.HardwareAddr
 	counts uint64
 }
 
-func (s *SendRecord) show() {
-	log.Println("本地向如下ip地址发送消息,top10:")
-	values:=make([]uint64,0)
+func show(topK int) {
+	sendRecorder.show(topK)
+	countRecorder.show()
+	fmt.Printf("\n 通信数:%d \n ", len(connectionRecorder))
+}
+
+func (s *SendRecord) show(topK int) {
+	fmt.Println("本地向如下ip地址发送消息,top:", topK)
+	values := make([]*Definition, 0)
+
 	s.sendDstMap.Range(func(key, value interface{}) bool {
-		values = append(values, value.(uint64))
+		values = append(values, value.(*Definition))
 		return true
 	})
-	// 通过value进行排序
-
+	length := len(values)
+	if length < topK {
+		topK = length
+	}
+	qSort(values, 0, length-1, topK)
+	fmt.Println(fmt.Sprintf(strings.Repeat("=", 19) + "destinition" + strings.Repeat("=", 19) + "totalCounts"))
+	for i := 0; i < topK; i++ {
+		s := strings.Repeat(" ", 19) + "%v" + strings.Repeat(" ", 19) + "%d" + "\n"
+		fmt.Printf(s, values[i].ip, values[i].counts)
+	}
 }
 
 func (c *CountRecorder) show() {
-	log.Printf("read error times:%d ====== timeout times: %d========packet error times:%d",
+	fmt.Printf("read error times:%d ====== timeout times: %d========packet error times:%d",
 		c.errorReadPollTimes, c.errorTimeOutPollTimes, c.packetErrorNumber)
 }
 
 var iname = flag.String("i", "en0", "")
+var topK = flag.Int("t", 10, "top number")
 
 func main() {
 	// 命令行判断
@@ -102,9 +118,9 @@ func main() {
 	go receive2(*iname)
 
 	time.Sleep(time.Second * 10)
-	log.Println("time ended,show detail")
+	fmt.Println("time ended,show detail")
 	stopChan2 <- struct{}{}
-
+	show(*topK)
 }
 
 // 开启子线程，每一秒计算一次该秒内的数据包大小平均值，并将下载、上传总量置零
@@ -112,7 +128,7 @@ func (r *Recorder) calBps() {
 	for {
 		select {
 		case <-stopChan2:
-			log.Println("stop calucating bytes")
+			fmt.Println("stop calucating bytes")
 			return
 		default:
 			os.Stdout.WriteString(fmt.Sprintf("\rDown:%.2fKb/s \t Up:%.2fKb/s \n",
@@ -132,13 +148,13 @@ func receive2(iname string) {
 	} else {
 		deviceWrapper, e = GetDeviceByName(iname)
 		if e != nil {
-			log.Fatalln(e)
+			panic(e)
 		}
 	}
 
 	inactiveHandle, e := pcap.NewInactiveHandle(deviceWrapper.name)
 	if e != nil {
-		log.Fatalln(e)
+		panic(e)
 	}
 	e = inactiveHandle.SetSnapLen(1 << 16)
 	e = inactiveHandle.SetBufferSize(2048)
@@ -147,7 +163,7 @@ func receive2(iname string) {
 	e = inactiveHandle.SetPromisc(true)
 	handle, e := inactiveHandle.Activate()
 	if e != nil {
-		log.Fatalln(e)
+		panic(e)
 	}
 	defer handle.Close()
 	source := gopacket.NewPacketSource(handle, handle.LinkType())
@@ -155,7 +171,7 @@ func receive2(iname string) {
 		select {
 		case <-stopChan2:
 			// 说明通道关闭
-			log.Println("receiver stop receiving packets")
+			fmt.Println("receiver stop receiving packets")
 			return
 		default:
 			packet, e := source.NextPacket()
@@ -163,17 +179,17 @@ func receive2(iname string) {
 				// FIXME 这里的顺序应该是有问题的
 				if e == pcap.NextErrorTimeoutExpired {
 					countRecorder.errorTimeOutPollTimes++
-					log.Println("timeout")
+					fmt.Println("timeout")
 					continue
 				} else if e == io.EOF {
-					log.Println("read end,exit")
+					fmt.Println("read end,exit")
 					return
 				} else if e == pcap.NextErrorReadError {
 					countRecorder.errorReadPollTimes++
-					log.Println("read error")
+					fmt.Println("read error")
 					continue
 				} else {
-					log.Fatalln(e)
+					panic(e)
 				}
 			}
 			if errorLayer := packet.ErrorLayer(); nil != errorLayer {
@@ -186,7 +202,7 @@ func receive2(iname string) {
 }
 
 var networkMap map[uint64]gopacket.Flow
-var connectionRecorder map[uint64]ConnectionRecorder //保存着连接数,记录双方交流的次数,这样显示的时候可以显示最多的连接
+var connectionRecorder map[uint64]*ConnectionRecorder //保存着连接数,记录双方交流的次数,这样显示的时候可以显示最多的连接
 // 显示对照着公司打算显示这些内容:
 // top列表: 2个模块:入的方向和出的方向
 //			每个模块都显示这些内容:源ip,目的ip,接收流量均值bps,发送流量均值bps,接收/发送包速率均值:pps
@@ -201,7 +217,6 @@ func handlePacket2(packet gopacket.Packet, deviceWrapper *DeviceWrapper2) {
 			recorder.downStreamDataSize += uint64(len(packet.Data()))
 		}
 	}
-	// 需要实现的功能: 统计双方通信的次数,top10
 	networkLayer := packet.NetworkLayer()
 	if nil != networkLayer {
 		flow := networkLayer.NetworkFlow()
@@ -209,8 +224,8 @@ func handlePacket2(packet gopacket.Packet, deviceWrapper *DeviceWrapper2) {
 		if connectionRelation, ok := connectionRecorder[hashKey]; ok {
 			connectionRelation.flow = flow
 			connectionRelation.count++
-			connectionRecorder[hashKey] = connectionRelation
 		} else {
+			connectionRelation = &ConnectionRecorder{}
 			connectionRelation.flow = flow
 			connectionRelation.count = 1
 			connectionRecorder[hashKey] = connectionRelation
@@ -228,33 +243,31 @@ func (s *SendRecord) record(dst gopacket.Endpoint) {
 	defer s.Unlock()
 	key := dst.FastHash()
 	if value, ok := s.sendDstMap.Load(key); ok {
-		count := value.(uint64)
-		count++
-		s.sendDstMap.Store(key, count)
+		definition := value.(*Definition)
+		definition.counts++
 	} else {
 		s.sendDstMap.Store(key, uint64(1))
+		definition := &Definition{
+			ip:     dst.String(),
+			counts: 1,
+		}
+		s.sendDstMap.Store(key, definition)
 	}
 }
 
 func init() {
-	sendRecorder = &SendRecord{
-		sendDstMap: sync.Map{},
-	}
-	countRecorder = &CountRecorder{
-	}
-	recorder = &Recorder{
-		downStreamDataSize: 0,
-		upStreamDataSize:   0,
-	}
-	connectionRecorder = make(map[uint64]ConnectionRecorder)
+	sendRecorder = &SendRecord{sendDstMap: sync.Map{},}
+	countRecorder = &CountRecorder{}
+	recorder = &Recorder{}
+	connectionRecorder = make(map[uint64]*ConnectionRecorder)
 	stopChan2 = make(chan struct{})
 	devices, err := pcap.FindAllDevs()
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	interfaces, e := net.Interfaces()
 	if e != nil {
-		log.Fatal(e)
+		panic(e)
 	}
 	for _, device := range interfaces {
 		if nil == device.HardwareAddr {
@@ -276,6 +289,9 @@ func init() {
 		ips := make([]net.IP, 0)
 		for _, addr := range addrs {
 			if ipNet := addr.(*net.IPNet); nil != ipNet {
+				if ipv4 := ipNet.IP.To4(); nil != ipv4 {
+					deviceWrapper.ip = ipv4
+				}
 				ips = append(ips, ipNet.IP)
 			}
 		}
@@ -304,7 +320,7 @@ func GetDeviceByName(iname string) (DeviceWrapper2, error) {
 func GetDevice() {
 	devices, err := pcap.FindAllDevs()
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
 	for _, device := range devices {
 		addrs := device.Addresses
@@ -316,7 +332,30 @@ func GetDevice() {
 	}
 }
 
-// 归并排序
-func mergeSort() {
-
+func qSort(definitions []*Definition, start, end, topK int) {
+	if start >= end {
+		return
+	}
+	p := paration(definitions, start, end)
+	if p >= topK {
+		qSort(definitions, start, p-1, topK)
+	} else {
+		qSort(definitions, start, p-1, topK)
+		qSort(definitions, p+1, end, topK)
+	}
+}
+func paration(values []*Definition, start, end int) int {
+	keyDefinition := values[start]
+	for start < end {
+		for end > start && values[end].counts <= keyDefinition.counts {
+			end--
+		}
+		values[start] = values[end]
+		for start < end && values[start].counts >= keyDefinition.counts {
+			start++
+		}
+		values[end] = values[start]
+	}
+	values[start] = keyDefinition
+	return start
 }
