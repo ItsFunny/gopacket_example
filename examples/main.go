@@ -23,12 +23,7 @@ var deviceSlice []DeviceWrapper
 var stopChan chan struct{}
 var chatChan chan struct{}
 var packetTypes [3]string
-
-type Sender struct {
-}
-
-type Receiver struct {
-}
+var errorPollTimes uint64
 
 type DeviceWrapper struct {
 	name string
@@ -55,14 +50,11 @@ func main() {
 	}
 	wg := sync.WaitGroup{}
 	go send(deviceSlice[sendIndex], deviceSlice[receiveIndex], wg)
-
-
+	go receive(deviceSlice[sendIndex], deviceSlice[receiveIndex], wg)
 
 	// windows 下是不行的
 	signalChan := make(chan os.Signal, 1)
-
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-
 	<-signalChan
 	stopChan <- struct{}{}
 	stopChan <- struct{}{}
@@ -79,7 +71,7 @@ func send(senderDevice, receiverDevice DeviceWrapper, wg sync.WaitGroup) {
 		return
 	}
 	defer handle.Close()
-	packetTypeLength := len(packetTypes)
+	//packetTypeLength := len(packetTypes)
 	sendIpsLength := len(senderDevice.ips)
 	receiverIpsLength := len(receiverDevice.ips)
 	// TODO 通过device 传递过来的得到其ip,ip需要经过过滤,不为空就行
@@ -89,7 +81,8 @@ func send(senderDevice, receiverDevice DeviceWrapper, wg sync.WaitGroup) {
 			log.Println("[Sender] exit")
 			return
 		default:
-			packetType:=packetTypes[rand.Intn(packetTypeLength)]
+			//packetType := packetTypes[rand.Intn(packetTypeLength)]
+			packetType := "arp"
 			datas, e := PacketBuild(senderDevice.mac, senderDevice.mac, senderDevice.ips[rand.Intn(sendIpsLength)],
 				receiverDevice.ips[rand.Intn(receiverIpsLength)], packetType)
 			if e != nil {
@@ -101,14 +94,14 @@ func send(senderDevice, receiverDevice DeviceWrapper, wg sync.WaitGroup) {
 				log.Println("[send]#WritePacketData error:", e)
 				continue
 			} else {
-				log.Printf("[Send] send %s data successfully",packetType)
+				log.Printf("[Send] send %s data successfully", packetType)
 				time.Sleep(time.Second * 2)
 			}
 		}
 	}
 }
-func receive(deviceName string, wg sync.WaitGroup) {
-	inactiveHandle, e := pcap.NewInactiveHandle(deviceName)
+func receive(sendDevice, receiveDevice DeviceWrapper, wg sync.WaitGroup) {
+	inactiveHandle, e := pcap.NewInactiveHandle(receiveDevice.name)
 	if e != nil {
 		log.Println("[receive]OpenLive error:", e)
 		wg.Done()
@@ -121,12 +114,82 @@ func receive(deviceName string, wg sync.WaitGroup) {
 	e = inactiveHandle.SetSnapLen(1 << 16)
 	handle, e := inactiveHandle.Activate()
 	if e != nil {
+		log.Printf("[receiver]active handle error:%v", e)
 		wg.Done()
 		return
 	}
 	defer handle.Close()
 
-	gopacket.NewPacketSource(handle, handle.LinkType())
+	source := gopacket.NewPacketSource(handle, handle.LinkType())
+	for {
+		select {
+		case <-stopChan:
+			wg.Done()
+			return
+		default:
+			packet, e := source.NextPacket()
+			if e != nil {
+				errorPollTimes++
+				continue
+			}
+			handlePacket(packet, sendDevice)
+		}
+	}
+}
+func handlePacket(packet gopacket.Packet, senderDevice DeviceWrapper) {
+	//fmt.Println("====== handle packet========")
+	//for _, layer := range packet.Layers() {
+	//	fmt.Println(layer.LayerType())
+	//}
+	//fmt.Println("============================")
+	arpLayer := packet.Layer(layers.LayerTypeARP)
+	if nil != arpLayer {
+		log.Println("detected arpLayer")
+		arp := arpLayer.(*layers.ARP)
+		if nil != arp {
+			log.Printf("send device mac:%v,packet mac:%v", senderDevice.mac,interface{}(arp.SourceHwAddress).(net.HardwareAddr))
+			log.Printf("send device ip:%v,packet port:%v",senderDevice.ips,arp.DstProtAddress)
+		}
+	}
+	// ipv4 layer
+	//ip4Layer := packet.Layer(layers.LayerTypeIPv4)
+	//if ip4Layer != nil {
+	//	fmt.Println("IPv4 layer detected.")
+	//	ip, _ := ip4Layer.(*layers.IPv4)
+	//	fmt.Println("contents:", ip.Contents)
+	//	fmt.Println("payload:", ip.Payload)
+	//	fmt.Printf("From %s to %s\n", ip.SrcIP, ip.DstIP)
+	//	fmt.Println("Protocol: ", ip.Protocol)
+	//	fmt.Println()
+	//} else {
+	//	fmt.Println("No IPv4 layer detected.")
+	//}
+	//// tcp layer
+	//tcpLayer := packet.Layer(layers.LayerTypeTCP)
+	//if tcpLayer != nil {
+	//	fmt.Println("TCP layer detected.")
+	//	tcp, _ := tcpLayer.(*layers.TCP)
+	//	fmt.Println("ACK: ", tcp.ACK)
+	//	fmt.Println("SYN: ", tcp.SYN)
+	//	fmt.Println("Seq: ", tcp.Seq)
+	//	fmt.Println("DstPort: ", tcp.DstPort)
+	//	fmt.Println("SrcPort: ", tcp.SrcPort)
+	//	fmt.Println()
+	//} else {
+	//	fmt.Println("No TCP layer detected.")
+	//}
+	////
+	//// udp layer
+	//udpLayer := packet.Layer(layers.LayerTypeUDP)
+	//if nil != udpLayer {
+	//	fmt.Println("UDP layer detected.")
+	//	udp, _ := tcpLayer.(*layers.UDP)
+	//	fmt.Printf("from port:%d to port :%d ", udp.SrcPort, udp.DstPort)
+	//	fmt.Println("payLoad:", udp.Payload)
+	//	fmt.Println("contents: ", udp.Contents)
+	//} else {
+	//	fmt.Println("No UDP layer detected")
+	//}
 }
 
 func PacketBuild(sMac, dMac net.HardwareAddr, sIp, dIp net.IP, policyType string) ([]byte, error) {
@@ -143,14 +206,8 @@ func PacketBuild(sMac, dMac net.HardwareAddr, sIp, dIp net.IP, policyType string
 		return nil, err
 	}
 
-	//packet := gopacket.NewPacket(data, layers.LinkTypeEthernet, gopacket.DecodeOptions{})
-	//if errorLayer := packet.ErrorLayer(); nil != errorLayer {
-	//	return nil, errorLayer.Error()
-	//}
-
 	return data, nil
 }
-
 func buildArp(sMac net.HardwareAddr, sIp, dIp net.IP) ([]byte, error) {
 	buffer := gopacket.NewSerializeBuffer()
 	option := gopacket.SerializeOptions{}
@@ -182,7 +239,7 @@ func buildTcp(sIp, dIp net.IP, sMac, dMac net.HardwareAddr) ([]byte, error) {
 	var etherType layers.EthernetType
 	var option gopacket.SerializeOptions
 	var ipLayer gopacket.SerializableLayer
-	buffer:=gopacket.NewSerializeBuffer()
+	buffer := gopacket.NewSerializeBuffer()
 	var err error
 	tcp := &layers.TCP{
 		SrcPort:    layers.TCPPort(123),
@@ -229,7 +286,7 @@ func buildUdp(sIp, dIp net.IP, sMac, dMac net.HardwareAddr) ([]byte, error) {
 	var option gopacket.SerializeOptions
 	var ipLayer gopacket.SerializableLayer
 	var err error
-	buffer:=gopacket.NewSerializeBuffer()
+	buffer := gopacket.NewSerializeBuffer()
 	udp := &layers.UDP{
 		BaseLayer: layers.BaseLayer{},
 		SrcPort:   layers.UDPPort(135),
@@ -273,6 +330,10 @@ func init() {
 	chatChan = make(chan struct{})
 	nameMacMap = make(map[string]net.HardwareAddr)
 	packetTypes = [3]string{"tcp", "arp", "udp"}
+	devices, err := pcap.FindAllDevs()
+	if err != nil {
+		log.Fatal(err)
+	}
 	interfaces, e := net.Interfaces()
 	if e != nil {
 		log.Fatal(e)
@@ -281,7 +342,9 @@ func init() {
 		if nil == device.HardwareAddr {
 			continue
 		}
-
+		if !containsInterface(&devices, device.Name) {
+			continue
+		}
 		addrs, e := device.Addrs()
 		if e != nil {
 			continue
@@ -309,7 +372,14 @@ func init() {
 	}
 
 }
-
+//func containsInterface(devices *[]pcap.Interface, name string) bool {
+//	for _, device := range *devices {
+//		if device.Name == name {
+//			return true
+//		}
+//	}
+//	return false
+//}
 func GetMacByIp(ip net.IP) net.HardwareAddr {
 	for _, m := range ipMacSlice {
 		if ip.Equal(m["ip"].(net.IP)) {
