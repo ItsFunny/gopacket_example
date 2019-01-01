@@ -8,7 +8,7 @@ import (
 	"github.com/google/gopacket/pcap"
 	"github.com/google/gopacket"
 
-	"go_test/gopacket/examples/common"
+	"go_test/examples/gopacket/common"
 )
 
 func main() {

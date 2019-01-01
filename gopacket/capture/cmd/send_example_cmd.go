@@ -8,8 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"go_test/gopacket/examples/capture"
-
+	"go_test/examples/gopacket/capture"
 )
 
 var dstIp=flag.String("d","120.78.240.211","dstIp")

@@ -6,8 +6,10 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+	"github.com/google/gopacket/pcapgo"
 	"github.com/pkg/errors"
 	"io"
+	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -16,35 +18,22 @@ import (
 	"time"
 )
 
-// TODO 修改计划了,不在本地进行互相发送了
-// 而是send的时候直接全发送给远端服务器
-// 但是receive处做文章,写好点
-// 预计receive: 对所有流量进行监控
-// 1. 省略握手的环节,记录有多少次用户交流,既通过flod-endpoint 的fasthash的对等性
-//		预计的结构为:通过map存储,key为fasthash返回值,value则是自定的结构体,保存mac地址和ip地址 即可,既通过
-//		这个可以统计连接数
-//		在这基础上可以做附加功能:
-// 2. 统计 tcp,udp,arp,icmp,mdns的次数
+var deviceWrappers []DeviceWrapper
+var sendRecorder *SendRecord
+var recorder *DownloadRecorder
+var countRecorder *CountRecorder
+var stopChan chan struct{}
+var packetChan chan gopacket.Packet
+var networkMap map[uint64]gopacket.Flow
+var connectionRecorder map[uint64]*ConnectionRecorder
 
-// 所以大体流程是这样
-// 只不过前n秒的包,提供命令行提示是否捕获特定的包any表示所有,然后是否启动测试发送的程序
-// 已经一个参数:是否末尾显示还是每次捕获到包都显示,
-// 最后输出显示的内容有: 连接数(通过endpoint的fasthash来忽略握手,统计连接数)
-// 记录哪些ip来访问过,以及统计次数
-// 记录本机向哪些ip发过数据包,降序显示
-// 统计tcp,udp,arp,icmp,mdns的次数
-// 可以的话统计下异常数据包 --这个有点难感觉
-// 综上:其实是有点复杂的逻辑,if判断挺多的会
-// 额外:捕获包的时候通过packetsource吧,另外可以尝试通过packetsourceparser
+var iname = flag.String("i", "en0", "")
+var topK = flag.Int("t", 10, "top number")
+var captureTime = flag.Int("c", 10, "senconds to capture ")
+var showDetail = flag.Bool("d", false, "show detail")
+var writeFile = flag.Bool("w", true, "")
 
-// 发送包用的
-var deviceWrappers []DeviceWrapper2
-var sendRecorder *SendRecord     // 记录发包的时候与哪些ip地址通信
-var recorder *Recorder           // 记录Bps,pps
-var countRecorder *CountRecorder // 记录一些次数相关的信息
-var stopChan2 chan struct{}
-
-type DeviceWrapper2 struct {
+type DeviceWrapper struct {
 	name string
 	mac  net.HardwareAddr
 	ip   net.IP
@@ -59,21 +48,32 @@ type SendRecord struct {
 	sync.Mutex
 	sendDstMap sync.Map
 }
-type Recorder struct {
-	downStreamDataSize uint64
-	upStreamDataSize   uint64
+
+type DownloadRecorder struct {
+	peekDownBps, peekUpStreamBps         float64
+	downStreamDataSize, upStreamDataSize uint64
 }
+
 type CountRecorder struct {
-	errorReadPollTimes    uint64 // 从packetSource读取数据的时候出现错误
-	errorTimeOutPollTimes uint64 // 从packetSource读取数据的时候超时
-	// 从packetSource读取数据无error返回,但是当组装数据的时候发现数据包有问题,可以检测异常数据包吗?
-	packetErrorNumber uint64
+	errorReadPollTimes    uint64
+	errorTimeOutPollTimes uint64
+	packetErrorNumber     uint64
 }
 
 type Definition struct {
 	ip     string
 	mac    net.HardwareAddr
 	counts uint64
+}
+
+func main() {
+	flag.Parse()
+	go recorder.calBps()
+	go receive(*iname)
+	time.Sleep(time.Second * time.Duration(*captureTime))
+	fmt.Println(" ended,show detail")
+	stopChan <- struct{}{}
+	show(*topK)
 }
 
 func show(topK int) {
@@ -107,32 +107,22 @@ func (c *CountRecorder) show() {
 		c.errorReadPollTimes, c.errorTimeOutPollTimes, c.packetErrorNumber)
 }
 
-var iname = flag.String("i", "en0", "")
-var topK = flag.Int("t", 10, "top number")
-
-func main() {
-	// 命令行判断
-
-	// 收包
-	go recorder.calBps()
-	go receive2(*iname)
-
-	time.Sleep(time.Second * 10)
-	fmt.Println("time ended,show detail")
-	stopChan2 <- struct{}{}
-	show(*topK)
-}
-
-// 开启子线程，每一秒计算一次该秒内的数据包大小平均值，并将下载、上传总量置零
-func (r *Recorder) calBps() {
+func (r *DownloadRecorder) calBps() {
 	for {
 		select {
-		case <-stopChan2:
+		case <-stopChan:
 			fmt.Println("stop calucating bytes")
 			return
 		default:
-			os.Stdout.WriteString(fmt.Sprintf("\rDown:%.2fKb/s \t Up:%.2fKb/s \n",
-				float32(r.downStreamDataSize)/1024/1, float32(r.upStreamDataSize)/1024/1))
+			tempDownSize := float64(r.downStreamDataSize) / 1024 / 1
+			tempUpSize := float64(r.upStreamDataSize) / 1024 / 1
+			fmt.Printf("\r Down: %.2f KB/s \t Up: %.2f KB/s \n", tempDownSize, tempUpSize)
+			if tempDownSize > r.peekDownBps {
+				r.peekDownBps = tempDownSize
+			}
+			if tempUpSize > r.peekUpStreamBps {
+				r.peekUpStreamBps = tempUpSize
+			}
 			r.upStreamDataSize = 0
 			r.downStreamDataSize = 0
 			time.Sleep(time.Second)
@@ -140,9 +130,15 @@ func (r *Recorder) calBps() {
 	}
 }
 
-func receive2(iname string) {
+func (r *DownloadRecorder) show() {
+	fmt.Printf(`\r 下载峰值: %.2f KB/s \t 
+		上传峰值: %.2f KB/s \n, %v 至 %v 期间 平均下载速度为:"`, r.peekDownBps,
+		r.peekUpStreamBps)
+}
+
+func receive(iname string) {
 	var e error
-	var deviceWrapper DeviceWrapper2
+	var deviceWrapper DeviceWrapper
 	if iname == "" || iname == "any" {
 		deviceWrapper = deviceWrappers[rand.Intn(len(deviceWrappers))]
 	} else {
@@ -166,14 +162,19 @@ func receive2(iname string) {
 		panic(e)
 	}
 	defer handle.Close()
+	if *writeFile {
+		go write2File()
+	}
 	source := gopacket.NewPacketSource(handle, handle.LinkType())
+
 	for {
 		select {
-		case <-stopChan2:
-			// 说明通道关闭
+		case <-stopChan:
 			fmt.Println("receiver stop receiving packets")
+			close(packetChan)
 			return
 		default:
+			showPacketsStats(handle)
 			packet, e := source.NextPacket()
 			if e != nil {
 				// FIXME 这里的顺序应该是有问题的
@@ -196,17 +197,56 @@ func receive2(iname string) {
 				countRecorder.packetErrorNumber++
 				continue
 			}
-			handlePacket2(packet, &deviceWrapper)
+			if *writeFile {
+				go func(p gopacket.Packet) {
+					packetChan <- p
+				}(packet)
+			}
+			handlePacket(packet, &deviceWrapper)
 		}
 	}
 }
 
-var networkMap map[uint64]gopacket.Flow
-var connectionRecorder map[uint64]*ConnectionRecorder //保存着连接数,记录双方交流的次数,这样显示的时候可以显示最多的连接
+func write2File() {
+	file, e := os.Create("test.pcap")
+	if e != nil {
+		log.Println("file path is not correct ")
+		return
+	}
+	defer file.Close()
+	writer := pcapgo.NewWriter(file)
+	e = writer.WriteFileHeader(1<<16, layers.LinkTypeEthernet)
+	if e != nil {
+		log.Println("[WriteFileHeader]error: ", e)
+		return
+	}
+	for {
+		select {
+		case packet, ok := <-packetChan:
+			if !ok {
+				return
+			}
+			e = writer.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
+			if e != nil {
+				log.Println("[WritePacket]error:", e)
+			}
+		}
+	}
+}
+
+func showPacketsStats(handle *pcap.Handle) {
+	stat, err := handle.Stats()
+	if nil != err {
+		log.Fatal(err)
+	}
+	log.Printf("total received:%d,total dropped:%d,total ifdropped:%d",
+		stat.PacketsReceived, stat.PacketsDropped, stat.PacketsIfDropped)
+}
+
 // 显示对照着公司打算显示这些内容:
 // top列表: 2个模块:入的方向和出的方向
 //			每个模块都显示这些内容:源ip,目的ip,接收流量均值bps,发送流量均值bps,接收/发送包速率均值:pps
-func handlePacket2(packet gopacket.Packet, deviceWrapper *DeviceWrapper2) {
+func handlePacket(packet gopacket.Packet, deviceWrapper *DeviceWrapper) {
 	// 接下来就是写业务逻辑了
 	etherType := packet.Layer(layers.LayerTypeEthernet)
 	if etherType != nil {
@@ -230,10 +270,54 @@ func handlePacket2(packet gopacket.Packet, deviceWrapper *DeviceWrapper2) {
 			connectionRelation.count = 1
 			connectionRecorder[hashKey] = connectionRelation
 		}
-		// 业务2,统计出方向的top10
-		// 说明是本地发出去的
 		if flow.Src().String() == deviceWrapper.ip.String() {
 			go sendRecorder.record(flow.Dst())
+		}
+	}
+	if *showDetail {
+		fmt.Println("====== handle packet========")
+		fmt.Println("packet:", packet)
+		for _, layer := range packet.Layers() {
+			fmt.Println(layer.LayerType())
+		}
+		fmt.Println("============================")
+		// ipv4 layer
+		ip4Layer := packet.Layer(layers.LayerTypeIPv4)
+		if ip4Layer != nil {
+			fmt.Println("IPv4 layer detected.")
+			ip, _ := ip4Layer.(*layers.IPv4)
+			fmt.Println("contents:", ip.Contents)
+			fmt.Println("payload:", ip.Payload)
+			fmt.Printf("From %s to %s\n", ip.SrcIP, ip.DstIP)
+			fmt.Println("Protocol: ", ip.Protocol)
+			fmt.Println()
+		} else {
+			fmt.Println("No IPv4 layer detected.")
+		}
+		tcpLayer := packet.Layer(layers.LayerTypeTCP)
+		if tcpLayer != nil {
+			fmt.Println("TCP layer detected.")
+			tcp, _ := tcpLayer.(*layers.TCP)
+			fmt.Println("ACK: ", tcp.ACK)
+			fmt.Println("SYN: ", tcp.SYN)
+			fmt.Println("Seq: ", tcp.Seq)
+			fmt.Println("DstPort: ", tcp.DstPort)
+			fmt.Println("SrcPort: ", tcp.SrcPort)
+			fmt.Println()
+		} else {
+			fmt.Println("No TCP layer detected.")
+		}
+
+		// udp layer
+		udpLayer := packet.Layer(layers.LayerTypeUDP)
+		if nil != udpLayer {
+			fmt.Println("UDP layer detected.")
+			udp, _ := udpLayer.(*layers.UDP)
+			fmt.Printf("from port:%d to port :%d ", udp.SrcPort, udp.DstPort)
+			fmt.Println("payLoad:", udp.Payload)
+			fmt.Println("contents: ", udp.Contents)
+		} else {
+			fmt.Println("No UDP layer detected")
 		}
 	}
 }
@@ -258,9 +342,10 @@ func (s *SendRecord) record(dst gopacket.Endpoint) {
 func init() {
 	sendRecorder = &SendRecord{sendDstMap: sync.Map{},}
 	countRecorder = &CountRecorder{}
-	recorder = &Recorder{}
+	recorder = &DownloadRecorder{}
 	connectionRecorder = make(map[uint64]*ConnectionRecorder)
-	stopChan2 = make(chan struct{})
+	stopChan = make(chan struct{})
+	packetChan = make(chan gopacket.Packet, 1024)
 	devices, err := pcap.FindAllDevs()
 	if err != nil {
 		panic(err)
@@ -283,21 +368,20 @@ func init() {
 		if len(addrs) == 0 {
 			continue
 		}
-		deviceWrapper := DeviceWrapper2{name: device.Name,
+		deviceWrapper := DeviceWrapper{name: device.Name,
 			mac: device.HardwareAddr,
 		}
-		ips := make([]net.IP, 0)
 		for _, addr := range addrs {
 			if ipNet := addr.(*net.IPNet); nil != ipNet {
 				if ipv4 := ipNet.IP.To4(); nil != ipv4 {
 					deviceWrapper.ip = ipv4
 				}
-				ips = append(ips, ipNet.IP)
 			}
 		}
 		deviceWrappers = append(deviceWrappers, deviceWrapper)
 	}
 }
+
 func containsInterface(devices *[]pcap.Interface, name string) bool {
 	for _, device := range *devices {
 		if device.Name == name {
@@ -307,31 +391,16 @@ func containsInterface(devices *[]pcap.Interface, name string) bool {
 	return false
 }
 
-func GetDeviceByName(iname string) (DeviceWrapper2, error) {
+func GetDeviceByName(iname string) (DeviceWrapper, error) {
 	for _, device := range deviceWrappers {
 		if device.name == iname {
 			return device, nil
 		}
 	}
-	return DeviceWrapper2{}, errors.New("none")
+	return DeviceWrapper{}, errors.New("none")
 }
 
-// 1. 先找到能用的设备,需要返回的是ip地址和设备mac地址,这里的ip统一用ipv4
-func GetDevice() {
-	devices, err := pcap.FindAllDevs()
-	if err != nil {
-		panic(err)
-	}
-	for _, device := range devices {
-		addrs := device.Addresses
-		for _, addr := range addrs {
-			if ipv4 := addr.IP.To4(); nil != ipv4 && !ipv4.IsLoopback() {
-
-			}
-		}
-	}
-}
-
+// FIXME 堆排序,或者归并
 func qSort(definitions []*Definition, start, end, topK int) {
 	if start >= end {
 		return

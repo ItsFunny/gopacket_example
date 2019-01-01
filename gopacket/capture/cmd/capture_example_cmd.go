@@ -8,10 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"go_test/gopacket/examples/capture"
-
-
-
+	"go_test/examples/gopacket/capture"
 )
 
 

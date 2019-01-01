@@ -6,7 +6,7 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket"
 
-	"go_test/gopacket/examples/common"
+	"go_test/examples/gopacket/common"
 
 
 )

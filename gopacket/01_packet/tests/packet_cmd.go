@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/gopacket/layers"
 
-	"go_test/gopacket/examples/01_packet"
-	"go_test/gopacket/examples/common"
+	"go_test/examples/gopacket/01_packet"
+	"go_test/examples/gopacket/common"
 )
 
 // 创建失败的packet

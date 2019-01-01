@@ -2,12 +2,12 @@ package _2_flow_endpoint
 
 import (
 	"encoding/json"
-	"go_test/gopacket/examples/common"
+	"go_test/examples/gopacket/common"
 	"log"
 
 	"github.com/google/gopacket/layers"
 
-	"go_test/gopacket/examples/01_packet"
+	"go_test/examples/gopacket/01_packet"
 )
 
 // flow 包含 2个endPoint 分别代表src和dst
