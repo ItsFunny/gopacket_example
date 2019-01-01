@@ -30,7 +30,7 @@ var connectionRecorder map[uint64]*ConnectionRecorder
 var iname = flag.String("i", "en0", "")
 var topK = flag.Int("t", 10, "top number")
 var captureTime = flag.Int("c", 10, "senconds to capture ")
-var showDetail = flag.Bool("d", false, "show detail")
+var showDetail = flag.Bool("d", true, "show detail")
 var writeFile = flag.Bool("w", true, "")
 
 type DeviceWrapper struct {

@@ -1,140 +1,64 @@
 package main
 
 import (
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
-	"go_test/examples/gopacket/common"
+	"flag"
+	"go_test/examples/gopacket/capture"
+	"log"
 	"net"
 )
 
-func PacketBuild(sMac, dMac net.HardwareAddr, sIp, dIp net.IP, policyType string) ([]byte, error) {
-	var data []byte
-	var err error
-	if policyType == "arp" {
-		data, err = buildArp(sMac, sIp, dIp)
-	} else if policyType == "tcp" {
-		data, err = buildTcp(sIp, dIp, sMac, dMac)
-	} else if policyType == "udp" {
-		data, err = buildUdp(sIp, dIp, sMac, dMac)
-	}
-	if err != nil {
-		return nil, err
-	}
 
-	return data, nil
-}
-func buildArp(sMac net.HardwareAddr, sIp, dIp net.IP) ([]byte, error) {
-	buffer := gopacket.NewSerializeBuffer()
-	option := gopacket.SerializeOptions{}
-	eth := &layers.Ethernet{
-		BaseLayer:    layers.BaseLayer{},
-		SrcMAC:       common.SMac,
-		DstMAC:       common.DMac,
-		EthernetType: layers.EthernetTypeARP,
-	}
-	arp := &layers.ARP{
-		BaseLayer:         layers.BaseLayer{},
-		AddrType:          layers.LinkTypeEthernet,
-		Protocol:          layers.EthernetTypeARP,
-		HwAddressSize:     6,
-		ProtAddressSize:   6,
-		Operation:         1,
-		SourceHwAddress:   sMac,
-		SourceProtAddress: sIp,
-		DstHwAddress:      net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
-		DstProtAddress:    dIp,
-	}
-	serializeError := gopacket.SerializeLayers(buffer, option, eth, arp)
-	if serializeError != nil {
-		return nil, serializeError
-	}
-	return buffer.Bytes(), nil
-}
-func buildTcp(sIp, dIp net.IP, sMac, dMac net.HardwareAddr) ([]byte, error) {
-	var etherType layers.EthernetType
-	var option gopacket.SerializeOptions
-	var ipLayer gopacket.SerializableLayer
-	buffer := gopacket.NewSerializeBuffer()
-	var err error
-	tcp := &layers.TCP{
-		SrcPort:    layers.TCPPort(123),
-		DstPort:    layers.TCPPort(321),
-		DataOffset: 5,
-		Window:     1 << 10,
-	}
-	if ip := sIp.To4(); nil != ip {
-		etherType = layers.EthernetTypeIPv4
-		ipLayer = &layers.IPv4{
-			BaseLayer: layers.BaseLayer{},
-			IHL:       5,
-			SrcIP:     ip,
-			DstIP:     dIp,
-		}
-		err = tcp.SetNetworkLayerForChecksum(ipLayer.(*layers.IPv4))
-	} else {
-		etherType = layers.EthernetTypeIPv6
-		ipLayer = &layers.IPv6{
-			SrcIP: sIp.To16(),
-			DstIP: dIp,
-		}
-		err = tcp.SetNetworkLayerForChecksum(ipLayer.(*layers.IPv6))
-	}
-	if err != nil {
-		return nil, err
-	}
-	eth := &layers.Ethernet{
-		BaseLayer:    layers.BaseLayer{},
-		SrcMAC:       sMac,
-		DstMAC:       dMac,
-		EthernetType: etherType,
-	}
+var dstIp = flag.String("d", "120.78.240.211", "dstIp")
+var iface = flag.String("i", "awdl0", "")
+var sendTimes = flag.Int("s", 5, "amount of packets to be sent")
+var interval = flag.Int64("t", 1, "send interval")
 
-	err = gopacket.SerializeLayers(buffer, option, eth, ipLayer, tcp)
-	if err != nil {
-		return nil, err
+
+var applicationChan chan struct{}
+
+
+func main() {
+	flag.Parse()
+	dIp := net.ParseIP(*dstIp)
+	if dIp == nil {
+		log.Println("无效ip")
+		flag.Usage()
+		return
 	}
-	return buffer.Bytes(), nil
-}
-func buildUdp(sIp, dIp net.IP, sMac, dMac net.HardwareAddr) ([]byte, error) {
-	var etherType layers.EthernetType
-	var option gopacket.SerializeOptions
-	var ipLayer gopacket.SerializableLayer
-	var err error
-	buffer := gopacket.NewSerializeBuffer()
-	udp := &layers.UDP{
-		BaseLayer: layers.BaseLayer{},
-		SrcPort:   layers.UDPPort(135),
-		DstPort:   layers.UDPPort(531),
-	}
-	if ip := sIp.To4(); nil != ip {
-		etherType = layers.EthernetTypeIPv4
-		ipLayer = &layers.IPv4{
-			BaseLayer: layers.BaseLayer{},
-			IHL:       5,
-			SrcIP:     ip,
-			DstIP:     dIp,
-		}
-		err = udp.SetNetworkLayerForChecksum(ipLayer.(*layers.IPv4))
+	capture.InitData(dIp, *sendTimes, *interval)
+	if *iface == "any" {
+		capture.SendFromAny()
 	} else {
-		etherType = layers.EthernetTypeIPv6
-		ipLayer = &layers.IPv6{
-			SrcIP: sIp.To16(),
-			DstIP: dIp,
+		ip, sMac := getLocalIpByName(*iface)
+		if ip == nil || sMac == nil {
+			log.Println("cant get local ip,check the interfaceName,send from local interfaces")
+			capture.SendFromAny()
+		}else{
+			capture.SendFromConcrete(*iface)
 		}
-		err = udp.SetNetworkLayerForChecksum(ipLayer.(*layers.IPv6))
 	}
-	if err != nil {
-		return nil, err
-	}
-	eth := &layers.Ethernet{
-		BaseLayer:    layers.BaseLayer{},
-		SrcMAC:       sMac,
-		DstMAC:       dMac,
-		EthernetType: etherType,
-	}
-	err = gopacket.SerializeLayers(buffer, option, eth, ipLayer, udp)
-	if err != nil {
-		return nil, err
-	}
-	return buffer.Bytes(), nil
+	log.Println("exit")
 }
+func getLocalIpByName(iface string) (net.IP, net.HardwareAddr) {
+	ifs, e := net.Interfaces()
+	if nil != e {
+		log.Fatalf("cant get local interfaces,error:%v", e)
+	}
+	for _, it := range ifs {
+		if it.Name != iface {
+			continue
+		}
+		addrs, _ := it.Addrs()
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+				if nil == ipnet.IP.To4() {
+					continue
+				}
+				return ipnet.IP, it.HardwareAddr
+			}
+		}
+	}
+	return nil, nil
+}
+
+

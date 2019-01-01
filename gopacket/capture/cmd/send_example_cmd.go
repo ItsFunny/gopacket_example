@@ -11,11 +11,10 @@ import (
 	"go_test/examples/gopacket/capture"
 )
 
-var dstIp=flag.String("d","120.78.240.211","dstIp")
-var iface=flag.String("i","en0","")
-var sendTimes=flag.Int("s",5,"amount of packets to be sent")
-var interval=flag.Int64("t",1,"send interval")
-
+var dstIp = flag.String("d", "120.78.240.211", "dstIp")
+var iface = flag.String("i", "en0", "")
+var sendTimes = flag.Int("s", 5, "amount of packets to be sent")
+var interval = flag.Int64("t", 1, "send interval")
 
 func main() {
 	flag.Parse()
