@@ -19,16 +19,18 @@ import (
 	"github.com/pkg/errors"
 )
 
-var deviceWrappers []*DeviceWrapper
-var stopChan chan struct{}
-var networkMap map[uint64]gopacket.Flow
 var iname = flag.String("i", "fgdg", "")
 var topK = flag.Int("t", 10, "top number")
 var captureTime = flag.Int("c", 10, "senconds to capture ")
 var showDetail = flag.Bool("d", true, "show detail")
 var writeFile = flag.Bool("w", true, "")
-var any bool
 
+var (
+	deviceWrappers []*DeviceWrapper
+	stopChan       chan struct{}
+	networkMap     map[uint64]gopacket.Flow
+	any            bool
+)
 
 type ConnectionRecorder struct {
 	flow  gopacket.Flow
@@ -59,26 +61,26 @@ type Definition struct {
 }
 
 type DeviceWrapper struct {
-	name string
-	mac  net.HardwareAddr
-	ip   net.IP
+	name               string
+	mac                net.HardwareAddr
+	ip                 net.IP
 	connectionRecorder map[uint64]*ConnectionRecorder
-	sendRecord *SendRecord
-	downLoadRecorder *DownloadRecorder
-	countRecorder *CountRecorder
-	packetChan chan gopacket.Packet
-	writeFileError error
+	sendRecord         *SendRecord
+	downLoadRecorder   *DownloadRecorder
+	countRecorder      *CountRecorder
+	packetChan         chan gopacket.Packet
+	writeFileError     error
 }
 
-func NewDeviceWrapper()*DeviceWrapper{
+func NewDeviceWrapper() *DeviceWrapper {
 	return &DeviceWrapper{
-		connectionRecorder: make(map[uint64]*ConnectionRecorder,0),
-		sendRecord:         &SendRecord{
-			sendDstMap: make(map[uint64]*Definition,0),
+		connectionRecorder: make(map[uint64]*ConnectionRecorder, 0),
+		sendRecord: &SendRecord{
+			sendDstMap: make(map[uint64]*Definition, 0),
 		},
-		downLoadRecorder:   &DownloadRecorder{},
-		countRecorder:      &CountRecorder{},
-		packetChan :make(chan gopacket.Packet, 1024),
+		downLoadRecorder: &DownloadRecorder{},
+		countRecorder:    &CountRecorder{},
+		packetChan:       make(chan gopacket.Packet, 1024),
 	}
 }
 
@@ -92,34 +94,33 @@ func main() {
 	fmt.Println("exit")
 }
 
-func Show(){
-	if any{
-		for _,deviceWrapper:=range deviceWrappers{
+func Show() {
+	if any {
+		for _, deviceWrapper := range deviceWrappers {
 			deviceWrapper.show()
 		}
-	}else{
+	} else {
 		wrapper, _ := GetDeviceByName(*iname)
 		wrapper.show()
 	}
 }
 
-func (d DeviceWrapper)show(){
+func (d DeviceWrapper) show() {
 	defer func() {
-		if err:=recover();nil!=err{
-			fmt.Printf("[show] device:%s, occur error:%v",d.name,err)
+		if err := recover(); nil != err {
+			fmt.Printf("[show] device:%s, occur error:%v", d.name, err)
 		}
 	}()
 	d.countRecorder.show()
 	d.downLoadRecorder.show()
 	d.sendRecord.show(*topK)
-	fmt.Printf("\n device:%s=============\n 通信数:%d \n ",d.name, len(d.connectionRecorder))
+	fmt.Printf("\n device:%s=============\n 通信数:%d \n ", d.name, len(d.connectionRecorder))
 }
-
 
 func (s *SendRecord) show(topK int) {
 	fmt.Println("本地向如下ip地址发送消息,top:", topK)
 	values := make([]*Definition, 0)
-	for _,value:=range s.sendDstMap{
+	for _, value := range s.sendDstMap {
 		values = append(values, value)
 	}
 
@@ -149,7 +150,7 @@ func (r *DownloadRecorder) calBps(name string) {
 		default:
 			tempDownSize := float64(r.downStreamDataSize) / 1024 / 1
 			tempUpSize := float64(r.upStreamDataSize) / 1024 / 1
-			fmt.Printf("\r device:%s===== Down: %.2f KB/s \t Up: %.2f KB/s \n",name, tempDownSize, tempUpSize)
+			fmt.Printf("\r device:%s===== Down: %.2f KB/s \t Up: %.2f KB/s \n", name, tempDownSize, tempUpSize)
 			if tempDownSize > r.peekDownBps {
 				r.peekDownBps = tempDownSize
 			}
@@ -167,9 +168,9 @@ func (r *DownloadRecorder) show() {
 	fmt.Printf(" \n \r 下载峰值: %.2f KB/s \t上传峰值: %.2f KB/s \n", r.peekDownBps, r.peekUpStreamBps)
 }
 
-func Receive(iname string){
-	foreachDevice:=func(){
-		for i:=0;i<len(deviceWrappers);i++{
+func Receive(iname string) {
+	foreachDevice := func() {
+		for i := 0; i < len(deviceWrappers); i++ {
 			go func(index int) {
 				go receive(deviceWrappers[index])
 			}(i)
@@ -177,14 +178,14 @@ func Receive(iname string){
 	}
 
 	if iname == "" || iname == "any" {
-		any=true
+		any = true
 		foreachDevice()
 	} else {
-		deviceWrapper, e:= GetDeviceByName(iname)
-		if e!=nil{
-			any=true
+		deviceWrapper, e := GetDeviceByName(iname)
+		if e != nil {
+			any = true
 			foreachDevice()
-		}else{
+		} else {
 			receive(deviceWrapper)
 		}
 	}
@@ -192,17 +193,17 @@ func Receive(iname string){
 func receive(deviceWrapper *DeviceWrapper) {
 	inactiveHandle, e := pcap.NewInactiveHandle(deviceWrapper.name)
 	if e != nil {
-		log.Printf("[NewInactiveHandle]device:%s new error:",deviceWrapper.name)
+		log.Printf("[NewInactiveHandle]device:%s new error:", deviceWrapper.name)
 		return
 	}
-	 inactiveHandle.SetSnapLen(1 << 16)
-	 inactiveHandle.SetBufferSize(2048)
-	 inactiveHandle.SetTimeout(time.Second * 3)
-	 inactiveHandle.SetImmediateMode(false)
-	 inactiveHandle.SetPromisc(true)
-	 handle, e := inactiveHandle.Activate()
+	inactiveHandle.SetSnapLen(1 << 16)
+	inactiveHandle.SetBufferSize(2048)
+	inactiveHandle.SetTimeout(time.Second * 3)
+	inactiveHandle.SetImmediateMode(false)
+	inactiveHandle.SetPromisc(true)
+	handle, e := inactiveHandle.Activate()
 	if e != nil {
-		log.Printf("[OpenLive] device:%s,error:%v",deviceWrapper.name,e)
+		log.Printf("[OpenLive] device:%s,error:%v", deviceWrapper.name, e)
 		return
 	}
 	defer handle.Close()
@@ -218,7 +219,7 @@ func receive(deviceWrapper *DeviceWrapper) {
 			close(deviceWrapper.packetChan)
 			return
 		default:
-			showPacketsStats(deviceWrapper,handle)
+			showPacketsStats(deviceWrapper, handle)
 			packet, e := source.NextPacket()
 			if e != nil {
 				if e == pcap.NextErrorTimeoutExpired {
@@ -232,7 +233,7 @@ func receive(deviceWrapper *DeviceWrapper) {
 					fmt.Println("read error")
 					continue
 				} else {
-					log.Printf("[NextPacket] device:%s,error:%v",deviceWrapper.name,e)
+					log.Printf("[NextPacket] device:%s,error:%v", deviceWrapper.name, e)
 					return
 				}
 			}
@@ -240,7 +241,7 @@ func receive(deviceWrapper *DeviceWrapper) {
 				deviceWrapper.countRecorder.packetErrorNumber++
 				continue
 			}
-			if *writeFile &&deviceWrapper.writeFileError==nil {
+			if *writeFile && deviceWrapper.writeFileError == nil {
 				go func(p gopacket.Packet) {
 					deviceWrapper.packetChan <- p
 				}(packet)
@@ -251,10 +252,10 @@ func receive(deviceWrapper *DeviceWrapper) {
 }
 
 func write2File(deviceWrapper *DeviceWrapper) {
-	file, e := os.Create(strconv.Itoa(hashCode(deviceWrapper.name))+"_test.pcap")
+	file, e := os.Create(strconv.Itoa(hashCode(deviceWrapper.name)) + "_test.pcap")
 	if e != nil {
 		log.Println("file path is not correct ")
-		deviceWrapper.writeFileError=e
+		deviceWrapper.writeFileError = e
 		return
 	}
 	defer file.Close()
@@ -278,13 +279,13 @@ func write2File(deviceWrapper *DeviceWrapper) {
 	}
 }
 
-func showPacketsStats(deviceWrapper *DeviceWrapper,handle *pcap.Handle) {
+func showPacketsStats(deviceWrapper *DeviceWrapper, handle *pcap.Handle) {
 	stat, err := handle.Stats()
 	if nil != err {
 		log.Fatal(err)
 	}
 	log.Printf("device:%s ======total received:%d,total dropped:%d,total ifdropped:%d",
-		deviceWrapper.name,stat.PacketsReceived, stat.PacketsDropped, stat.PacketsIfDropped)
+		deviceWrapper.name, stat.PacketsReceived, stat.PacketsDropped, stat.PacketsIfDropped)
 }
 
 func handlePacket(packet gopacket.Packet, deviceWrapper *DeviceWrapper) {
@@ -371,7 +372,7 @@ func (s *SendRecord) record(dst gopacket.Endpoint) {
 			ip:     dst.String(),
 			counts: 1,
 		}
-		s.sendDstMap[key]= definition
+		s.sendDstMap[key] = definition
 	}
 }
 
@@ -383,7 +384,7 @@ func init() {
 		panic(err)
 	}
 	interfaces, e := net.Interfaces()
-	log.Printf("devices:%d,interfaces:%d",len(devices),len(interfaces))
+	log.Printf("devices:%d,interfaces:%d", len(devices), len(interfaces))
 	if e != nil {
 		panic(e)
 	}
@@ -392,8 +393,8 @@ func init() {
 			continue
 		}
 		deviceWrapper := NewDeviceWrapper()
-		deviceWrapper.mac=device.HardwareAddr
-		if !containsInterface(&devices, device,deviceWrapper) {
+		deviceWrapper.mac = device.HardwareAddr
+		if !containsInterface(&devices, device, deviceWrapper) {
 			continue
 		}
 		addrs, e := device.Addrs()
@@ -415,17 +416,17 @@ func init() {
 	}
 }
 
-func containsInterface(devices *[]pcap.Interface, netDevice net.Interface,deviceWrapper *DeviceWrapper) bool {
+func containsInterface(devices *[]pcap.Interface, netDevice net.Interface, deviceWrapper *DeviceWrapper) bool {
 	for _, device := range *devices {
 		addresses := device.Addresses
-		for _,address:=range addresses{
+		for _, address := range addresses {
 			addrs, e := netDevice.Addrs()
-			if e!=nil{
+			if e != nil {
 				return false
 			}
-			for _,addr:=range addrs{
-				if ipnet:=addr.(*net.IPNet);nil!=ipnet&&ipnet.IP.Equal(address.IP){
-					deviceWrapper.name=device.Name
+			for _, addr := range addrs {
+				if ipnet := addr.(*net.IPNet); nil != ipnet && ipnet.IP.Equal(address.IP) {
+					deviceWrapper.name = device.Name
 					return true
 				}
 			}
