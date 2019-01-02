@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/emirpasic/gods/lists/arraylist"
+	"github.com/emirpasic/gods/lists/doublylinkedlist"
 	"hash/crc32"
 	"io"
 	"log"
@@ -10,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/gopacket"
@@ -71,6 +74,81 @@ type DeviceWrapper struct {
 	packetChan         chan gopacket.Packet
 	writeFileError     error
 }
+
+var tcpHolder *TcpHolder
+
+type TcpHolder struct {
+	sync.RWMutex
+	tcps *doublylinkedlist.List // 改用双向链表,因为一旦涉及到删除之后如果是数组的话需要移动元素,而双向链表不需要
+}
+
+type TcpNode struct {
+	sync.RWMutex
+	id   uint64
+	list *arraylist.List
+}
+
+type TcpPacketWrapper struct {
+	sync.Mutex
+	Seq               uint32
+	Ack               uint32
+	DuplicateAckTimes byte
+}
+
+func (t *TcpHolder) IsDuplicateAck(hashCode uint64, wrapper *TcpPacketWrapper) bool {
+	var isDuplicateAck bool
+	var isExist bool
+	t.RLock()
+	t.tcps.Each(func(index int, value interface{}) {
+		if isDuplicateAck {
+			return
+		}
+		if node := value.(*TcpNode); node.id == hashCode {
+			isExist = true
+			t.RUnlock()
+			node.RLock()
+			node.list.Each(func(index int, value interface{}) {
+				if tcpWrapper := value.(*TcpPacketWrapper); tcpWrapper.Seq == wrapper.Seq {
+					isDuplicateAck = true
+					// 异常流量
+					node.RUnlock()
+					if tcpWrapper.DuplicateAckTimes < 2 {
+						tcpWrapper.Lock()
+						if tcpWrapper.DuplicateAckTimes < 2 {
+							tcpWrapper.DuplicateAckTimes++
+							tcpWrapper.Unlock()
+						} else {
+							tcpWrapper.Unlock()
+							isDuplicateAck = true
+							return
+						}
+					} else {
+						return
+					}
+				}
+			})
+			if !isDuplicateAck {
+				node.RUnlock()
+				node.Lock()
+				node.list.Add(wrapper)
+				node.Unlock()
+			}
+		}
+	})
+	if !isExist {
+		t.RUnlock()
+		t.Lock()
+		tcpNode := &TcpNode{
+			id:   hashCode,
+			list: arraylist.New(),
+		}
+		tcpNode.list.Add(wrapper)
+		t.tcps.Add(tcpNode)
+		t.Unlock()
+	}
+	return isDuplicateAck
+}
+
 
 func NewDeviceWrapper() *DeviceWrapper {
 	return &DeviceWrapper{
@@ -165,7 +243,8 @@ func (r *DownloadRecorder) calBps(name string) {
 }
 
 func (r *DownloadRecorder) show() {
-	fmt.Printf(" \n \r 下载峰值: %.2f KB/s \t上传峰值: %.2f KB/s \n", r.peekDownBps, r.peekUpStreamBps)
+	fmt.Printf(" \n \r 下载峰值: %.2f KB/s \t上传峰值: %.2f KB/s \n,pps:%v",
+		r.peekDownBps, r.peekUpStreamBps, 1000*r.peekUpStreamBps/84)
 }
 
 func Receive(iname string) {
@@ -190,7 +269,7 @@ func Receive(iname string) {
 		}
 	}
 }
-func (d *DeviceWrapper)receive() {
+func (d *DeviceWrapper) receive() {
 	inactiveHandle, e := pcap.NewInactiveHandle(d.name)
 	if e != nil {
 		log.Printf("[NewInactiveHandle]device:%s new error:", d.name)
@@ -252,7 +331,8 @@ func (d *DeviceWrapper)receive() {
 }
 
 func write2File(deviceWrapper *DeviceWrapper) {
-	file, e := os.Create(strconv.Itoa(hashCode(deviceWrapper.name)) + "_test.pcap")
+	bytes := []byte(deviceWrapper.name)
+	file, e := os.Create(strconv.Itoa(hashCode(bytes)) + "_test.pcap")
 	if e != nil {
 		log.Println("file path is not correct ")
 		deviceWrapper.writeFileError = e
@@ -344,6 +424,16 @@ func handlePacket(packet gopacket.Packet, deviceWrapper *DeviceWrapper) {
 			fmt.Println("Seq: ", tcp.Seq)
 			fmt.Println("DstPort: ", tcp.DstPort)
 			fmt.Println("SrcPort: ", tcp.SrcPort)
+
+			hashCode := hashCode(tcp.Contents)
+			wrapper := &TcpPacketWrapper{
+				Seq:               tcp.Ack,
+				DuplicateAckTimes: 0,
+			}
+			if isDuplicateAck := tcpHolder.IsDuplicateAck(uint64(hashCode), wrapper); isDuplicateAck {
+				fmt.Println("find duplicate key")
+			}
+
 			fmt.Println()
 		} else {
 			fmt.Println("No TCP layer detected.")
@@ -363,6 +453,17 @@ func handlePacket(packet gopacket.Packet, deviceWrapper *DeviceWrapper) {
 	}
 }
 
+func hashCode(bytes []byte) int {
+	v := int(crc32.ChecksumIEEE(bytes))
+	if v >= 0 {
+		return v
+	}
+	if -v >= 0 {
+		return -v
+	}
+	return 0
+}
+
 func (s *SendRecord) record(dst gopacket.Endpoint) {
 	key := dst.FastHash()
 	if definition, ok := s.sendDstMap[key]; ok {
@@ -379,6 +480,11 @@ func (s *SendRecord) record(dst gopacket.Endpoint) {
 func init() {
 	stopChan = make(chan struct{})
 	devices, err := pcap.FindAllDevs()
+
+	tcpHolder = &TcpHolder{
+		RWMutex: sync.RWMutex{},
+		tcps:    doublylinkedlist.New(),
+	}
 
 	if err != nil {
 		panic(err)
@@ -470,15 +576,4 @@ func paration(values []*Definition, start, end int) int {
 	}
 	values[start] = keyDefinition
 	return start
-}
-
-func hashCode(s string) int {
-	v := int(crc32.ChecksumIEEE([]byte(s)))
-	if v >= 0 {
-		return v
-	}
-	if -v >= 0 {
-		return -v
-	}
-	return 0
 }
