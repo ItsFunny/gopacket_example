@@ -76,25 +76,26 @@ type DeviceWrapper struct {
 }
 
 var tcpHolder *TcpHolder
-
+// FIXME
 type TcpHolder struct {
 	sync.RWMutex
 	tcps *doublylinkedlist.List // 改用双向链表,因为一旦涉及到删除之后如果是数组的话需要移动元素,而双向链表不需要
 }
-
+// FIXME
 type TcpNode struct {
 	sync.RWMutex
 	id   uint64
 	list *arraylist.List
 }
 
+// FIXME
 type TcpPacketWrapper struct {
 	sync.Mutex
 	Seq               uint32
 	Ack               uint32
 	DuplicateAckTimes byte
 }
-
+// FIXME
 func (t *TcpHolder) IsDuplicateAck(hashCode uint64, wrapper *TcpPacketWrapper) bool {
 	var isDuplicateAck bool
 	var isExist bool
@@ -148,7 +149,6 @@ func (t *TcpHolder) IsDuplicateAck(hashCode uint64, wrapper *TcpPacketWrapper) b
 	}
 	return isDuplicateAck
 }
-
 
 func NewDeviceWrapper() *DeviceWrapper {
 	return &DeviceWrapper{
