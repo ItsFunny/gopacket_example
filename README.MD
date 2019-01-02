@@ -1,3 +1,7 @@
+## 测试方式:
+
+运行capture_main.go 或者sender_main.go
+
 ## npcap
 
 winpcap的进阶版,winpcap已经停止维护
