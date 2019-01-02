@@ -57,7 +57,9 @@ winpcap的进阶版,winpcap已经停止维护
 				  但是这种方式无法控制,error之类的也直接全丢弃不管
 		-  2.2.2 通过packetSource#NextPacket ,这种方法最灵活,同时外抛了异常,同时当流量小的时候性能很高(没有
 				  chan的开销)
+				  
 ## 异常处理
+
 - 见 pcap.go L327 && L387 
     -   io.EOF : file or OpenOffLine  当无数据读取的时候,不会返回指定的error,统一io.EOF 
     -   NextErrorNotActivated : 
