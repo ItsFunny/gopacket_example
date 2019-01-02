@@ -13,10 +13,10 @@ winpcap的进阶版,winpcap已经停止维护
 - 2.Flow And Endpoint 
     -    Flow 流量,包含srcEndPoint 和dstEndPoint 表明是谁发给谁
     -    EndPoint 
- - 3.Decoder
+- 3.Decoder
     -   3.1 自定义decoder
     -   3.2 DecodingLayerParser 对特定的layer解码,大大提升效率
- - 4.Serialize
+- 4.Serialize
 
 ## 抓包
 
