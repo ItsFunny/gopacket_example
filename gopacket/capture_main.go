@@ -172,7 +172,7 @@ func Receive(iname string) {
 	foreachDevice := func() {
 		for i := 0; i < len(deviceWrappers); i++ {
 			go func(index int) {
-				go deviceWrappers[index].receive()
+				go receive(deviceWrappers[index])
 			}(i)
 		}
 	}
@@ -186,14 +186,14 @@ func Receive(iname string) {
 			any = true
 			foreachDevice()
 		} else {
-			deviceWrapper.receive()
+			receive(deviceWrapper)
 		}
 	}
 }
-func (d *DeviceWrapper)receive() {
-	inactiveHandle, e := pcap.NewInactiveHandle(d.name)
+func receive(deviceWrapper *DeviceWrapper) {
+	inactiveHandle, e := pcap.NewInactiveHandle(deviceWrapper.name)
 	if e != nil {
-		log.Printf("[NewInactiveHandle]device:%s new error:", d.name)
+		log.Printf("[NewInactiveHandle]device:%s new error:", deviceWrapper.name)
 		return
 	}
 	inactiveHandle.SetSnapLen(1 << 16)
@@ -203,50 +203,50 @@ func (d *DeviceWrapper)receive() {
 	inactiveHandle.SetPromisc(true)
 	handle, e := inactiveHandle.Activate()
 	if e != nil {
-		log.Printf("[OpenLive] device:%s,error:%v", d.name, e)
+		log.Printf("[OpenLive] device:%s,error:%v", deviceWrapper.name, e)
 		return
 	}
 	defer handle.Close()
 	if *writeFile {
-		go write2File(d)
+		go write2File(deviceWrapper)
 	}
 	source := gopacket.NewPacketSource(handle, handle.LinkType())
-	go d.downLoadRecorder.calBps(d.name)
+	go deviceWrapper.downLoadRecorder.calBps(deviceWrapper.name)
 	for {
 		select {
 		case <-stopChan:
 			fmt.Println("receiver stop receiving packets")
-			close(d.packetChan)
+			close(deviceWrapper.packetChan)
 			return
 		default:
-			showPacketsStats(d, handle)
+			showPacketsStats(deviceWrapper, handle)
 			packet, e := source.NextPacket()
 			if e != nil {
 				if e == pcap.NextErrorTimeoutExpired {
-					d.countRecorder.errorTimeOutPollTimes++
+					deviceWrapper.countRecorder.errorTimeOutPollTimes++
 					continue
 				} else if e == io.EOF {
 					fmt.Println("read end,exit")
 					return
 				} else if e == pcap.NextErrorReadError {
-					d.countRecorder.errorReadPollTimes++
+					deviceWrapper.countRecorder.errorReadPollTimes++
 					fmt.Println("read error")
 					continue
 				} else {
-					log.Printf("[NextPacket] device:%s,error:%v", d.name, e)
+					log.Printf("[NextPacket] device:%s,error:%v", deviceWrapper.name, e)
 					return
 				}
 			}
 			if errorLayer := packet.ErrorLayer(); nil != errorLayer {
-				d.countRecorder.packetErrorNumber++
+				deviceWrapper.countRecorder.packetErrorNumber++
 				continue
 			}
-			if *writeFile && d.writeFileError == nil {
+			if *writeFile && deviceWrapper.writeFileError == nil {
 				go func(p gopacket.Packet) {
-					d.packetChan <- p
+					deviceWrapper.packetChan <- p
 				}(packet)
 			}
-			handlePacket(packet, d)
+			handlePacket(packet, deviceWrapper)
 		}
 	}
 }
