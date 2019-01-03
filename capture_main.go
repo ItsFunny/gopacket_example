@@ -3,8 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/emirpasic/gods/lists/arraylist"
-	"github.com/emirpasic/gods/lists/doublylinkedlist"
 	"hash/crc32"
 	"io"
 	"log"
@@ -15,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/emirpasic/gods/lists/arraylist"
+	"github.com/emirpasic/gods/lists/doublylinkedlist"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
@@ -22,10 +22,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-var iname = flag.String("i", "fgdg", "")
+var iname = flag.String("i", "en0", "")
 var topK = flag.Int("t", 10, "top number")
-var captureTime = flag.Int("c", 10, "senconds to capture ")
-var showDetail = flag.Bool("d", true, "show detail")
+var captureTime = flag.Int("c", 10, "")
+var showDetail = flag.Bool("d", false, "show detail")
 var writeFile = flag.Bool("w", true, "")
 
 var (
@@ -33,6 +33,7 @@ var (
 	stopChan       chan struct{}
 	networkMap     map[uint64]gopacket.Flow
 	any            bool
+	tcpHolder      *TcpHolder
 )
 
 type ConnectionRecorder struct {
@@ -72,30 +73,40 @@ type DeviceWrapper struct {
 	downLoadRecorder   *DownloadRecorder
 	countRecorder      *CountRecorder
 	packetChan         chan gopacket.Packet
+	closed             bool
 	writeFileError     error
 }
 
-var tcpHolder *TcpHolder
+<<<<<<< HEAD
 // FIXME
+=======
+var tcpHolder *TcpHolder
+
+>>>>>>> parent of 44d0646... fixme
 type TcpHolder struct {
 	sync.RWMutex
-	tcps *doublylinkedlist.List // 改用双向链表,因为一旦涉及到删除之后如果是数组的话需要移动元素,而双向链表不需要
+	tcps *doublylinkedlist.List
 }
+
+<<<<<<< HEAD
 // FIXME
+=======
+>>>>>>> parent of 44d0646... fixme
 type TcpNode struct {
 	sync.RWMutex
 	id   uint64
 	list *arraylist.List
 }
 
-// FIXME
 type TcpPacketWrapper struct {
 	sync.Mutex
 	Seq               uint32
 	Ack               uint32
 	DuplicateAckTimes byte
 }
-// FIXME
+<<<<<<< HEAD
+=======
+
 func (t *TcpHolder) IsDuplicateAck(hashCode uint64, wrapper *TcpPacketWrapper) bool {
 	var isDuplicateAck bool
 	var isExist bool
@@ -150,6 +161,7 @@ func (t *TcpHolder) IsDuplicateAck(hashCode uint64, wrapper *TcpPacketWrapper) b
 	return isDuplicateAck
 }
 
+
 func NewDeviceWrapper() *DeviceWrapper {
 	return &DeviceWrapper{
 		connectionRecorder: make(map[uint64]*ConnectionRecorder, 0),
@@ -161,6 +173,7 @@ func NewDeviceWrapper() *DeviceWrapper {
 		packetChan:       make(chan gopacket.Packet, 1024),
 	}
 }
+>>>>>>> parent of 44d0646... fixme
 
 func main() {
 	flag.Parse()
@@ -172,79 +185,49 @@ func main() {
 	fmt.Println("exit")
 }
 
-func Show() {
-	if any {
-		for _, deviceWrapper := range deviceWrappers {
-			deviceWrapper.show()
+func init() {
+	stopChan = make(chan struct{})
+	devices, err := pcap.FindAllDevs()
+
+	tcpHolder = &TcpHolder{
+		RWMutex: sync.RWMutex{},
+		tcps:    doublylinkedlist.New(),
+	}
+
+	if err != nil {
+		panic(err)
+	}
+	interfaces, e := net.Interfaces()
+	log.Printf("devices:%d,interfaces:%d", len(devices), len(interfaces))
+	if e != nil {
+		panic(e)
+	}
+	for _, device := range interfaces {
+		if nil == device.HardwareAddr {
+			continue
 		}
-	} else {
-		wrapper, _ := GetDeviceByName(*iname)
-		wrapper.show()
-	}
-}
-
-func (d DeviceWrapper) show() {
-	defer func() {
-		if err := recover(); nil != err {
-			fmt.Printf("[show] device:%s, occur error:%v", d.name, err)
+		deviceWrapper := NewDeviceWrapper()
+		deviceWrapper.mac = device.HardwareAddr
+		if !containsInterface(&devices, device, deviceWrapper) {
+			continue
 		}
-	}()
-	d.countRecorder.show()
-	d.downLoadRecorder.show()
-	d.sendRecord.show(*topK)
-	fmt.Printf("\n device:%s=============\n 通信数:%d \n ", d.name, len(d.connectionRecorder))
-}
+		addrs, e := device.Addrs()
+		if e != nil {
+			continue
+		}
+		if len(addrs) == 0 {
+			continue
+		}
 
-func (s *SendRecord) show(topK int) {
-	fmt.Println("本地向如下ip地址发送消息,top:", topK)
-	values := make([]*Definition, 0)
-	for _, value := range s.sendDstMap {
-		values = append(values, value)
-	}
-
-	length := len(values)
-	if length < topK {
-		topK = length
-	}
-	qSort(values, 0, length-1, topK)
-	fmt.Println(fmt.Sprintf(strings.Repeat("=", 19) + "destinition" + strings.Repeat("=", 19) + "totalCounts"))
-	for i := 0; i < topK; i++ {
-		s := strings.Repeat(" ", 19) + "%v" + strings.Repeat(" ", 19) + "%d" + "\n"
-		fmt.Printf(s, values[i].ip, values[i].counts)
-	}
-}
-
-func (c *CountRecorder) show() {
-	fmt.Printf("read error times:%d ====== timeout times: %d========packet error times:%d",
-		c.errorReadPollTimes, c.errorTimeOutPollTimes, c.packetErrorNumber)
-}
-
-func (r *DownloadRecorder) calBps(name string) {
-	for {
-		select {
-		case <-stopChan:
-			fmt.Println("stop calucating bytes")
-			return
-		default:
-			tempDownSize := float64(r.downStreamDataSize) / 1024 / 1
-			tempUpSize := float64(r.upStreamDataSize) / 1024 / 1
-			fmt.Printf("\r device:%s===== Down: %.2f KB/s \t Up: %.2f KB/s \n", name, tempDownSize, tempUpSize)
-			if tempDownSize > r.peekDownBps {
-				r.peekDownBps = tempDownSize
+		for _, addr := range addrs {
+			if ipNet := addr.(*net.IPNet); nil != ipNet {
+				if ipv4 := ipNet.IP.To4(); nil != ipv4 {
+					deviceWrapper.ip = ipv4
+				}
 			}
-			if tempUpSize > r.peekUpStreamBps {
-				r.peekUpStreamBps = tempUpSize
-			}
-			r.upStreamDataSize = 0
-			r.downStreamDataSize = 0
-			time.Sleep(time.Second)
 		}
+		deviceWrappers = append(deviceWrappers, deviceWrapper)
 	}
-}
-
-func (r *DownloadRecorder) show() {
-	fmt.Printf(" \n \r 下载峰值: %.2f KB/s \t上传峰值: %.2f KB/s \n,pps:%v",
-		r.peekDownBps, r.peekUpStreamBps, 1000*r.peekUpStreamBps/84)
 }
 
 func Receive(iname string) {
@@ -269,6 +252,7 @@ func Receive(iname string) {
 		}
 	}
 }
+
 func (d *DeviceWrapper) receive() {
 	inactiveHandle, e := pcap.NewInactiveHandle(d.name)
 	if e != nil {
@@ -324,48 +308,15 @@ func (d *DeviceWrapper) receive() {
 				go func(p gopacket.Packet) {
 					d.packetChan <- p
 				}(packet)
+			} else {
+				if !d.closed {
+					d.closed = true
+					close(d.packetChan)
+				}
 			}
 			handlePacket(packet, d)
 		}
 	}
-}
-
-func write2File(deviceWrapper *DeviceWrapper) {
-	bytes := []byte(deviceWrapper.name)
-	file, e := os.Create(strconv.Itoa(hashCode(bytes)) + "_test.pcap")
-	if e != nil {
-		log.Println("file path is not correct ")
-		deviceWrapper.writeFileError = e
-		return
-	}
-	defer file.Close()
-	writer := pcapgo.NewWriter(file)
-	e = writer.WriteFileHeader(1<<16, layers.LinkTypeEthernet)
-	if e != nil {
-		log.Println("[WriteFileHeader]error: ", e)
-		return
-	}
-	for {
-		select {
-		case packet, ok := <-deviceWrapper.packetChan:
-			if !ok {
-				return
-			}
-			e = writer.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
-			if e != nil {
-				log.Println("[WritePacket]error:", e)
-			}
-		}
-	}
-}
-
-func showPacketsStats(deviceWrapper *DeviceWrapper, handle *pcap.Handle) {
-	stat, err := handle.Stats()
-	if nil != err {
-		log.Fatal(err)
-	}
-	log.Printf("device:%s ======total received:%d,total dropped:%d,total ifdropped:%d",
-		deviceWrapper.name, stat.PacketsReceived, stat.PacketsDropped, stat.PacketsIfDropped)
 }
 
 func handlePacket(packet gopacket.Packet, deviceWrapper *DeviceWrapper) {
@@ -453,6 +404,229 @@ func handlePacket(packet gopacket.Packet, deviceWrapper *DeviceWrapper) {
 	}
 }
 
+// FIXME
+func (t *TcpHolder) IsDuplicateAck(hashCode uint64, wrapper *TcpPacketWrapper) bool {
+	var isDuplicateAck bool
+	var isExist bool
+	t.RLock()
+	t.tcps.Each(func(index int, value interface{}) {
+		if isDuplicateAck {
+			return
+		}
+		if node := value.(*TcpNode); node.id == hashCode {
+			isExist = true
+			t.RUnlock()
+			node.RLock()
+			node.list.Each(func(index int, value interface{}) {
+				if tcpWrapper := value.(*TcpPacketWrapper); tcpWrapper.Seq == wrapper.Seq {
+					isDuplicateAck = true
+					// 异常流量
+					node.RUnlock()
+					if tcpWrapper.DuplicateAckTimes < 2 {
+						tcpWrapper.Lock()
+						if tcpWrapper.DuplicateAckTimes < 2 {
+							tcpWrapper.DuplicateAckTimes++
+							tcpWrapper.Unlock()
+						} else {
+							tcpWrapper.Unlock()
+							isDuplicateAck = true
+							return
+						}
+					} else {
+						return
+					}
+				}
+			})
+			if !isDuplicateAck {
+				node.RUnlock()
+				node.Lock()
+				node.list.Add(wrapper)
+				node.Unlock()
+			}
+		}
+	})
+	if !isExist {
+		t.RUnlock()
+		t.Lock()
+		tcpNode := &TcpNode{
+			id:   hashCode,
+			list: arraylist.New(),
+		}
+		tcpNode.list.Add(wrapper)
+		t.tcps.Add(tcpNode)
+		t.Unlock()
+	}
+	return isDuplicateAck
+}
+
+func write2File(deviceWrapper *DeviceWrapper) {
+	bytes := []byte(deviceWrapper.name)
+	file, e := os.Create(strconv.Itoa(hashCode(bytes)) + "_test.pcap")
+	if e != nil {
+		log.Println("file path is not correct ")
+		deviceWrapper.writeFileError = e
+		return
+	}
+	defer file.Close()
+	writer := pcapgo.NewWriter(file)
+	e = writer.WriteFileHeader(1<<16, layers.LinkTypeEthernet)
+	if e != nil {
+		log.Println("[WriteFileHeader]error: ", e)
+		return
+	}
+	for {
+		select {
+		case packet, ok := <-deviceWrapper.packetChan:
+			if !ok {
+				return
+			}
+			e = writer.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
+			if e != nil {
+				log.Println("[WritePacket]error:", e)
+			}
+		}
+	}
+}
+
+func showPacketsStats(deviceWrapper *DeviceWrapper, handle *pcap.Handle) {
+	stat, err := handle.Stats()
+	if nil != err {
+		log.Fatal(err)
+	}
+	log.Printf("device:%s ======total received:%d,total dropped:%d,total ifdropped:%d",
+		deviceWrapper.name, stat.PacketsReceived, stat.PacketsDropped, stat.PacketsIfDropped)
+}
+
+func NewDeviceWrapper() *DeviceWrapper {
+	return &DeviceWrapper{
+		connectionRecorder: make(map[uint64]*ConnectionRecorder, 0),
+		sendRecord: &SendRecord{
+			sendDstMap: make(map[uint64]*Definition, 0),
+		},
+		downLoadRecorder: &DownloadRecorder{},
+		countRecorder:    &CountRecorder{},
+		packetChan:       make(chan gopacket.Packet, 1024),
+	}
+}
+
+func Show() {
+	if any {
+		for _, deviceWrapper := range deviceWrappers {
+			deviceWrapper.show()
+		}
+	} else {
+		wrapper, _ := GetDeviceByName(*iname)
+		wrapper.show()
+	}
+}
+
+func (d DeviceWrapper) show() {
+	defer func() {
+		if err := recover(); nil != err {
+			fmt.Printf("[show] device:%s, occur error:%v", d.name, err)
+		}
+	}()
+	d.countRecorder.show()
+	d.downLoadRecorder.show()
+	d.sendRecord.show(*topK)
+}
+
+func (c *CountRecorder) show() {
+	fmt.Printf("read error times:%d ====== timeout times: %d========packet error times:%d",
+		c.errorReadPollTimes, c.errorTimeOutPollTimes, c.packetErrorNumber)
+}
+
+func (r *DownloadRecorder) show() {
+	fmt.Printf(" \n \r 下载峰值: %.2f KB/s \t上传峰值: %.2f KB/s \n",
+		r.peekDownBps, r.peekUpStreamBps)
+}
+
+func (s *SendRecord) show(topK int) {
+	fmt.Println("本地向如下ip地址发送消息,top:", topK)
+	values := make([]*Definition, 0)
+	for _, value := range s.sendDstMap {
+		values = append(values, value)
+	}
+
+	length := len(values)
+	if length < topK {
+		topK = length
+	}
+	qSort(values, 0, length-1, topK)
+	fmt.Println(fmt.Sprintf(strings.Repeat("=", 19) + "destinition" + strings.Repeat("=", 19) + "totalCounts"))
+	for i := 0; i < topK; i++ {
+		s := strings.Repeat(" ", 19) + "%v" + strings.Repeat(" ", 19) + "%d" + "\n"
+		fmt.Printf(s, values[i].ip, values[i].counts)
+	}
+}
+
+func qSort(definitions []*Definition, start, end, topK int) {
+	if start >= end {
+		return
+	}
+	dealPivot(definitions, start, end)
+	pivot := end - 1
+	i, j := start, end-1
+	for {
+		for i < pivot && definitions[i].counts > definitions[pivot].counts {
+			i++
+		}
+		for j > pivot && definitions[j].counts < definitions[pivot].counts {
+			j--
+		}
+		if i < j {
+			definitions[i], definitions[j] = definitions[j], definitions[i]
+		} else {
+			break
+		}
+	}
+
+	if i < end {
+		definitions[i], definitions[end-1] = definitions[end-1], definitions[i]
+	}
+	qSort(definitions, start, i-1, topK)
+	if pivot < topK {
+		qSort(definitions, i+1, end, topK)
+	}
+}
+
+func dealPivot(definitions []*Definition, start, end int) {
+	mid := (start + end) / 2
+	if definitions[start].counts < definitions[mid].counts {
+		definitions[start], definitions[mid] = definitions[mid], definitions[start]
+	}
+	if definitions[start].counts < definitions[end].counts {
+		definitions[start], definitions[end] = definitions[end], definitions[start]
+	}
+	if definitions[end].counts > definitions[mid].counts {
+		definitions[end], definitions[mid] = definitions[mid], definitions[end]
+	}
+}
+
+func (r *DownloadRecorder) calBps(name string) {
+	for {
+		select {
+		case <-stopChan:
+			fmt.Println("stop calucating bytes")
+			return
+		default:
+			tempDownSize := float64(r.downStreamDataSize) / 1024 / 1
+			tempUpSize := float64(r.upStreamDataSize) / 1024 / 1
+			fmt.Printf("\r device:%s===== Down: %.2f KB/s \t Up: %.2f KB/s \n", name, tempDownSize, tempUpSize)
+			if tempDownSize > r.peekDownBps {
+				r.peekDownBps = tempDownSize
+			}
+			if tempUpSize > r.peekUpStreamBps {
+				r.peekUpStreamBps = tempUpSize
+			}
+			r.upStreamDataSize = 0
+			r.downStreamDataSize = 0
+			time.Sleep(time.Second)
+		}
+	}
+}
+
+// FIXME
 func hashCode(bytes []byte) int {
 	v := int(crc32.ChecksumIEEE(bytes))
 	if v >= 0 {
@@ -474,51 +648,6 @@ func (s *SendRecord) record(dst gopacket.Endpoint) {
 			counts: 1,
 		}
 		s.sendDstMap[key] = definition
-	}
-}
-
-func init() {
-	stopChan = make(chan struct{})
-	devices, err := pcap.FindAllDevs()
-
-	tcpHolder = &TcpHolder{
-		RWMutex: sync.RWMutex{},
-		tcps:    doublylinkedlist.New(),
-	}
-
-	if err != nil {
-		panic(err)
-	}
-	interfaces, e := net.Interfaces()
-	log.Printf("devices:%d,interfaces:%d", len(devices), len(interfaces))
-	if e != nil {
-		panic(e)
-	}
-	for _, device := range interfaces {
-		if nil == device.HardwareAddr {
-			continue
-		}
-		deviceWrapper := NewDeviceWrapper()
-		deviceWrapper.mac = device.HardwareAddr
-		if !containsInterface(&devices, device, deviceWrapper) {
-			continue
-		}
-		addrs, e := device.Addrs()
-		if e != nil {
-			continue
-		}
-		if len(addrs) == 0 {
-			continue
-		}
-
-		for _, addr := range addrs {
-			if ipNet := addr.(*net.IPNet); nil != ipNet {
-				if ipv4 := ipNet.IP.To4(); nil != ipv4 {
-					deviceWrapper.ip = ipv4
-				}
-			}
-		}
-		deviceWrappers = append(deviceWrappers, deviceWrapper)
 	}
 }
 
@@ -548,32 +677,4 @@ func GetDeviceByName(iname string) (*DeviceWrapper, error) {
 		}
 	}
 	return nil, errors.New("none")
-}
-
-func qSort(definitions []*Definition, start, end, topK int) {
-	if start >= end {
-		return
-	}
-	p := paration(definitions, start, end)
-	if p >= topK {
-		qSort(definitions, start, p-1, topK)
-	} else {
-		qSort(definitions, start, p-1, topK)
-		qSort(definitions, p+1, end, topK)
-	}
-}
-func paration(values []*Definition, start, end int) int {
-	keyDefinition := values[start]
-	for start < end {
-		for end > start && values[end].counts <= keyDefinition.counts {
-			end--
-		}
-		values[start] = values[end]
-		for start < end && values[start].counts >= keyDefinition.counts {
-			start++
-		}
-		values[end] = values[start]
-	}
-	values[start] = keyDefinition
-	return start
 }
