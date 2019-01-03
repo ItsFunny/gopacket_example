@@ -77,103 +77,26 @@ type DeviceWrapper struct {
 	writeFileError     error
 }
 
-<<<<<<< HEAD
 // FIXME
-=======
-var tcpHolder *TcpHolder
-
->>>>>>> parent of 44d0646... fixme
 type TcpHolder struct {
 	sync.RWMutex
 	tcps *doublylinkedlist.List
 }
 
-<<<<<<< HEAD
 // FIXME
-=======
->>>>>>> parent of 44d0646... fixme
 type TcpNode struct {
 	sync.RWMutex
 	id   uint64
 	list *arraylist.List
 }
 
+// FIXME
 type TcpPacketWrapper struct {
 	sync.Mutex
 	Seq               uint32
 	Ack               uint32
 	DuplicateAckTimes byte
 }
-<<<<<<< HEAD
-=======
-
-func (t *TcpHolder) IsDuplicateAck(hashCode uint64, wrapper *TcpPacketWrapper) bool {
-	var isDuplicateAck bool
-	var isExist bool
-	t.RLock()
-	t.tcps.Each(func(index int, value interface{}) {
-		if isDuplicateAck {
-			return
-		}
-		if node := value.(*TcpNode); node.id == hashCode {
-			isExist = true
-			t.RUnlock()
-			node.RLock()
-			node.list.Each(func(index int, value interface{}) {
-				if tcpWrapper := value.(*TcpPacketWrapper); tcpWrapper.Seq == wrapper.Seq {
-					isDuplicateAck = true
-					// 异常流量
-					node.RUnlock()
-					if tcpWrapper.DuplicateAckTimes < 2 {
-						tcpWrapper.Lock()
-						if tcpWrapper.DuplicateAckTimes < 2 {
-							tcpWrapper.DuplicateAckTimes++
-							tcpWrapper.Unlock()
-						} else {
-							tcpWrapper.Unlock()
-							isDuplicateAck = true
-							return
-						}
-					} else {
-						return
-					}
-				}
-			})
-			if !isDuplicateAck {
-				node.RUnlock()
-				node.Lock()
-				node.list.Add(wrapper)
-				node.Unlock()
-			}
-		}
-	})
-	if !isExist {
-		t.RUnlock()
-		t.Lock()
-		tcpNode := &TcpNode{
-			id:   hashCode,
-			list: arraylist.New(),
-		}
-		tcpNode.list.Add(wrapper)
-		t.tcps.Add(tcpNode)
-		t.Unlock()
-	}
-	return isDuplicateAck
-}
-
-
-func NewDeviceWrapper() *DeviceWrapper {
-	return &DeviceWrapper{
-		connectionRecorder: make(map[uint64]*ConnectionRecorder, 0),
-		sendRecord: &SendRecord{
-			sendDstMap: make(map[uint64]*Definition, 0),
-		},
-		downLoadRecorder: &DownloadRecorder{},
-		countRecorder:    &CountRecorder{},
-		packetChan:       make(chan gopacket.Packet, 1024),
-	}
-}
->>>>>>> parent of 44d0646... fixme
 
 func main() {
 	flag.Parse()
@@ -305,6 +228,7 @@ func (d *DeviceWrapper) receive() {
 				continue
 			}
 			if *writeFile && d.writeFileError == nil {
+				// FIXME OOM
 				go func(p gopacket.Packet) {
 					d.packetChan <- p
 				}(packet)
