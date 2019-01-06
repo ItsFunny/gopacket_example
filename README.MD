@@ -1,6 +1,7 @@
 ## 示例程序
 
 capture_main.go 和sender_main.go
+无论windows还是*nix 直接右键运行即可
 
 ## npcap
  
