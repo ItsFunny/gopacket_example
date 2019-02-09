@@ -530,9 +530,11 @@ func dealPivot(definitions []*Definition, start, end int) {
 func (r *DownloadRecorder) calBps(name string) {
 	for {
 		select {
-		case <-stopChan:
-			fmt.Println("stop calucating bytes")
-			return
+		case _,ok:=<-stopChan:
+			if ok {
+				fmt.Println("stop calucating bytes")
+				return
+			}
 		default:
 			tempDownSize := float64(r.downStreamDataSize) / 1024 / 1
 			tempUpSize := float64(r.upStreamDataSize) / 1024 / 1

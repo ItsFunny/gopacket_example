@@ -2,6 +2,7 @@
 
 capture_main.go 和sender_main.go
 无论windows还是*nix 直接右键运行即可
+* 2019-02-09 19:34 在地铁上运行的时候,发现有bug额,但是并不影响使用,haahah
 
 ## npcap
  
